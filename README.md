@@ -41,10 +41,11 @@ DSH 的一组可独立开关的增强组件。组件以一个 Cordis bundle 发�
 2. 使用配置的 compact 模型生成摘要；
 3. 创建 replacement session 并写入摘要；
 4. 继承原会话的工作区、模型、effort 和 agent preset；
-5. 确认 replacement 已经出现在正常会话列表，并且拥有原模式的工具；
-6. 只有确认成功后，才归档旧会话和相关子代理。
+5. 以受保护的 system/message surface head 创建 checkpoint，避免重启后的 v4 日志校验失败；
+6. 确认 replacement 已经出现在正常会话列表，并且拥有原模式的工具；
+7. 只有确认成功后，才归档旧会话和相关子代理。
 
-如果 compact 路线遇到余额、鉴权或限流类 provider 错误，组件会尝试回退到该会话最后使用的模型路线。所有创建、挂载和可见性失败都应保留旧会话，不静默删除原数据。
+如果 compact 路线遇到余额、鉴权或限流类 provider 错误，组件会尝试回退到该会话最后使用的模型路线。所有创建、挂载和可见性失败都应保留旧会话，不静默删除原数据。0.4.98 起，replacement 的 seed 还会先建立空的受保护 system/message head，避免第一次真实系统提示词写入后在 DSH 重启时被判为损坏日志。
 
 ### 可视化
 
@@ -163,7 +164,7 @@ npm run pack:release
 - Mermaid chunk 与主 Client bundle 都包含在发布包中；
 - 安装后的 bundle 与发布 tarball 的关键文件 hash 一致。
 
-当前功能基线为 **v0.4.97**。发布历史以 Git tags 为准。
+当前功能基线为 **v0.4.98**。发布历史以 Git tags 为准。
 
 ## 已知边界
 

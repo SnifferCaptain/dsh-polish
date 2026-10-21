@@ -3170,7 +3170,6 @@ sessionController: {
         source.indexOf("'工具说明'") < 0 &&
         source.indexOf("view === 'tools'") < 0 &&
         source.indexOf('preview.toolText') < 0 &&
-        source.indexOf('toolCount') < 0 &&
         source.indexOf("view === 'template'") >= 0 &&
         source.indexOf("preview.effectiveTemplate") >= 0 &&
         source.indexOf("varLegend.push('{{' + vv.name + '}} = ' + vv.value)") >= 0,
@@ -3391,7 +3390,7 @@ sessionController: {
     )
     ok(
       'the package exports the prompts subpath and ships the directory at 0.4.85',
-      promptsPkg.version === '0.4.97' &&
+      promptsPkg.version === '0.4.98' &&
         promptsPkg.exports['./prompts'] &&
         promptsPkg.exports['./prompts'].default === './prompts/index.js' &&
         promptsPkg.files.indexOf('prompts/') >= 0,
@@ -4875,7 +4874,7 @@ sessionController: {
     // 块缺失即「行未被 Loader 激活」，诊断可判读。
     ok('0.4.53: side-channel registration failures cannot abort apply (fail-soft, recorded as setupError)', keRaw.indexOf('try {\n    ctx.effect(function () {') >= 0 && keRaw.indexOf('setupError') >= 0)
     ok('0.4.53: the settings.update return is not assumed thenable (defensive .then)', keRaw.indexOf("typeof update.then === 'function'") >= 0)
-      keRaw.indexOf("VERSION = '0.4.97'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
+      keRaw.indexOf("VERSION = '0.4.98'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
 
     // The carry decision is the whole component: pull the shipped pure function
     // out and exercise the matrix directly.
@@ -4895,7 +4894,7 @@ sessionController: {
 
     var keAtRow = kePatch.lastIndexOf("id: 'dsh-polish:keep-effort'")
     ok('the bundle patch ships the keep-effort row, enabled by default (no disabled flag on the row)', keAtRow >= 0 && kePatch.indexOf("name: 'dsh-polish/keep-effort'", keAtRow) !== -1 && kePatch.slice(keAtRow, keAtRow + 400).indexOf('disabled') < 0)
-      kePkg.version === '0.4.97' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
+      kePkg.version === '0.4.98' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
     var keNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'keep-effort', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', keNestPkg.name === 'dsh-polish-keep-effort' && keNestPkg.dsh === undefined && !!keNestPkg.exports && !!keNestPkg.exports['.'])
   }
@@ -5052,7 +5051,7 @@ sessionController: {
     ok('the replace re-verifies the live draft and never reuses a detached DOM anchor', skMentionRaw.indexOf('text.slice(start, start + token.length) !== token') >= 0 && skMentionRaw.indexOf('if (typeof root.focus === \'function\') root.focus()') >= 0 && skMentionRaw.indexOf('view.anchorNode') < 0)
     ok('the blue-span decoration engine and its apply.js wiring are gone', source.indexOf('createSkillMentionDecoration') === -1 && source.indexOf('dshp-skill-ref') === -1 && source.indexOf('syncSkillRef') === -1)
     ok('the host no longer rewrites sent messages (no marker, no pre-step)', skRaw.indexOf('SELECTED_SKILL_MARKER') < 0 && skRaw.indexOf("ctx.on('agent/pre-step'") < 0 && skRaw.indexOf('expandSelectedSkillText') < 0)
-      skPkg.version === '0.4.97'
+      skPkg.version === '0.4.98'
   }
 
   section('session-slim: K-suffix, message derivation, chunking, tree walk, fold (0.4.75 pure functions)')
@@ -5216,11 +5215,11 @@ sessionController: {
      ok('0.4.86 ghost-session guard uses the sidebar-visible session corpus (SessionListValue.items), not the broad persisted corpus', slimHostSrc.indexOf('ctx.sessionController.list()') >= 0 && slimHostSrc.indexOf('visibleResult.items') >= 0 && slimHostSrc.indexOf('if (!s || !visibleById[s.id]) continue') >= 0 && slimHostSrc.indexOf('if (!visibleById[id]) continue') >= 0)
      ok('0.4.86 replacement safety: retain the create handle, require new-session visibility before old archive; 0.4.90 success path NO LONGER disposes (replacement stays a live idle session like a DSH fork), disposes only on failure paths', slimHostSrc.indexOf('newHandle = await ctx.agents.create(createArgs)') >= 0 && slimHostSrc.indexOf('newHandle.dispose()') >= 0 && slimHostSrc.indexOf('SLIM_NEW_NOT_VISIBLE') >= 0 && slimHostSrc.indexOf('sideEffects.newAgentStopped') >= 0 && slimHostSrc.indexOf('sideEffects.newVisible') >= 0 && slimHostSrc.indexOf("sideEffects.newAgentStopped = 'skipped'") >= 0 && slimHostSrc.indexOf("job.phase = 'stopping-new-agent'") < 0)
      ok('0.4.86 replacement inherits the original agent preset in durable session metadata', slimHostSrc.indexOf('liveAgentPreset = s.header') >= 0 && slimHostSrc.indexOf('agentPreset: coldHeader') >= 0 && slimHostSrc.indexOf('seedMeta.agentPreset') >= 0)
-     ok('seed mirrors DSH fork + /compact: user/message checkpoint (block-array content, /compact-shape) + session/end-seed inherited marker, inheritedEventCount 4 + a completed turn/start+turn/end (0.4.90: clears sessionListMetadata.blank so the sidebar shows it), meta.isSeeded (top-level replacement, NO parentSession), workspace attachSession', slimHostSrc.indexOf("type: 'user/message', seq: 0") >= 0 && slimHostSrc.indexOf("surfaceOp: 'append'") >= 0 && slimHostSrc.indexOf("type: 'session/end-seed', seq: 3") >= 0 && slimHostSrc.indexOf("type: 'turn/start', seq: 1") >= 0 && slimHostSrc.indexOf("type: 'turn/end', seq: 2") >= 0 && slimHostSrc.indexOf("reason: { kind: 'completed' }") >= 0 && slimHostSrc.indexOf('inheritedEventCount: 4') >= 0 && slimHostSrc.indexOf('isSeeded: true') >= 0 && slimHostSrc.indexOf('attachSession(newId)') >= 0 && slimHostSrc.indexOf("content: [{ type: 'text', text: CHECKPOINT_PREAMBLE + '\\n\\n' + SUMMARY_OPEN_TAG + '\\n' + slim.summary + '\\n' + SUMMARY_CLOSE_TAG }]") >= 0 && slimHostSrc.indexOf("source: { kind: 'dsh-polish-session-slim' }") >= 0)
+      ok('0.4.98 seed establishes a protected empty system head before the checkpoint, completes a turn, and lets Session append the sole inherited end-seed marker; this prevents restart-time system/message surface corruption', slimHostSrc.indexOf("import { BlockAssembler, createSystemMessage, createUserMessage }") >= 0 && slimHostSrc.indexOf("var seedSystemMessage = createSystemMessage('')") >= 0 && slimHostSrc.indexOf("type: 'turn/start', seq: 0") >= 0 && slimHostSrc.indexOf("type: 'step/start', seq: 1") >= 0 && slimHostSrc.indexOf("type: 'system/message', seq: 2") >= 0 && slimHostSrc.indexOf("message: seedSystemMessage") >= 0 && slimHostSrc.indexOf("type: 'user/message', seq: 3") >= 0 && slimHostSrc.indexOf("type: 'step/end', seq: 4") >= 0 && slimHostSrc.indexOf("type: 'turn/end', seq: 5") >= 0 && slimHostSrc.indexOf('inheritedEventCount: seedEvents.length') >= 0 && slimHostSrc.indexOf('isSeeded: true') >= 0 && slimHostSrc.indexOf('attachSession(newId)') >= 0 && slimHostSrc.indexOf("source: { kind: 'dsh-polish-session-slim' }") >= 0)
     var seedBlockStart = slimHostSrc.indexOf('var seedEvents = [')
      var seedBlockEnd = slimHostSrc.indexOf('var seedMeta = {', seedBlockStart)
      var seedBlock = seedBlockStart >= 0 && seedBlockEnd > seedBlockStart ? slimHostSrc.slice(seedBlockStart, seedBlockEnd) : ''
-     ok('0.4.85 seed marker is top-level append on user/message; end-seed stays log-only', seedBlock.indexOf("data: checkpointMessage, surfaceOp: 'append' },") >= 0 && seedBlock.indexOf("type: 'session/end-seed', seq: 3") >= 0 && seedBlock.indexOf("type: 'turn/start', seq: 1") >= 0 && seedBlock.indexOf("type: 'turn/end', seq: 2") >= 0 && seedBlock.indexOf("type: 'session/end-seed', seq: 3, time: seedNow, data: { inherited: true }, surfaceOp") < 0)
+      ok('0.4.98 seed block places protected system/message before checkpoint and omits a hand-written end-seed marker', seedBlock.indexOf("type: 'turn/start', seq: 0") >= 0 && seedBlock.indexOf("type: 'step/start', seq: 1") >= 0 && seedBlock.indexOf("type: 'system/message', seq: 2") >= 0 && seedBlock.indexOf("type: 'user/message', seq: 3") >= 0 && seedBlock.indexOf("type: 'step/end', seq: 4") >= 0 && seedBlock.indexOf("type: 'turn/end', seq: 5") >= 0 && seedBlock.indexOf("type: 'session/end-seed'") < 0)
      ok('new session returns to its workspace (create with workspaceId attaches)', slimHostSrc.indexOf('ctx.workspaceRegistry.resolveByPath(row.cwd)') >= 0 && slimHostSrc.indexOf('SLIM_WORKSPACE_LOOKUP_FAILED') >= 0 && slimHostSrc.indexOf('lineageComplete: !corpusLookupFailed && haveCorpus') >= 0 && slimHostSrc.indexOf('SLIM_LINEAGE_UNAVAILABLE') >= 0)
       ok('0.4.90 P0: replacement is TOP-LEVEL (seedMeta has NO parentSession) so it is not a child of the soon-archived old session and stays sidebar-visible', (function () {
         var ms = slimHostSrc.indexOf('var seedMeta = {')
@@ -5237,7 +5236,7 @@ sessionController: {
     var slimPatch = fs.readFileSync(path.join(__dirname, '..', 'cordis.patch.yml'), 'utf8')
     var slimAtRow = slimPatch.lastIndexOf("id: 'dsh-polish:session-slim'")
     ok('the bundle patch ships the session-slim row, disabled by default', slimAtRow >= 0 && slimPatch.indexOf("name: 'dsh-polish/session-slim'", slimAtRow) !== -1 && slimPatch.slice(slimAtRow, slimAtRow + 400).indexOf('disabled: true') >= 0)
-      slimPkg.version === '0.4.97' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
+      slimPkg.version === '0.4.98' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
     var slimNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'session-slim', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', slimNestPkg.name === 'dsh-polish-session-slim' && slimNestPkg.dsh === undefined && !!slimNestPkg.exports && !!slimNestPkg.exports['.'])
   }

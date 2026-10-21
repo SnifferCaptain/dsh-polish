@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, createSystemMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 
 /**
  * 会话瘦身（组件 M）：把冗长会话「压缩续命」——对会话的当前上下文窗口（打开
@@ -1474,24 +1474,31 @@ export function apply(ctx, config) {
       content: [{ type: 'text', text: CHECKPOINT_PREAMBLE + '\n\n' + SUMMARY_OPEN_TAG + '\n' + slim.summary + '\n' + SUMMARY_CLOSE_TAG }],
       source: { kind: 'dsh-polish-session-slim' },
     })
+    var seedSystemMessage = createSystemMessage('')
     var seedNow = Date.now()
-    // 0.4.90（P0 真因）：replacement 必须以「已完成的一轮 turn」出生。
-    // sessionListMetadata.blank 的定义是「折叠前缀里没有 turn」，而
-    // applySessionListMetadata 只在 turn/start 时把 blank 清成 false；
-    // 侧栏 isVisible() 规则是「session.blank && id !== current → 隐藏」。
-    // 旧 seed 只有 user/message + session/end-seed、没有 turn/start，
-    // 于是 replacement 在 sessionController.list() 里可见、在侧栏里却永远
-    // 不出现——这正是用户反复报的「瘦身完新会话消失」。
-    // 补 turn/start + turn/end（reason completed）后：
-    //   · sessionListMetadata.blank = false → 侧栏可见；
-    //   · turnBoundary.lastTurn = 1，agent 构造时 phase.lastTurn 读它，
-    //     下一轮真实 turn 从 2 开始（不会重复 turn 1）；
-    //   · turn/end 把 openTurnStartSeq 清空（不留开放 turn，不会触发续跑）。
+    // 0.4.98：replacement 必须以一个**受保护的 system/message surface head** 出生。
+    //
+    // 旧 seed 直接把 checkpoint user/message 放在 surface node 0。运行中的 Agent
+    // 可以暂时继续工作，但 DSH v4 持久化校验要求：只要后续出现 system/message，
+    // surface 的第一个 head 必须先由 system/message 建立并受保护。否则会在下次
+    // DSH 重启、重新加载 session.v4.jsonl.zstd 时失败：
+    //   system/message requires a protected first surface head
+    //
+    // 修法：用 createSystemMessage('') 创建一个**空的、不改变模型内容**的 system
+    // head，放在 seed turn 的 step 1；checkpoint user/message 放在其后。空 system
+    // message 不会产生模型文本，但会建立 DSH 要求的 protectedHead。随后真实轮次
+    // 的 system/message 可以正常追加或替换这个受保护的 surface。
+    //
+    // 同时让 Session 自己在 inheritedEventCount 位置追加唯一的 session/end-seed，
+    // 不再把 marker 手工放进 seed 后又把 cut 写成 4，避免产生重复 end-seed。
+    // seed turn 仍然完整结束：blank=false、lastTurn=1、没有开放 turn。
     var seedEvents = [
-      { type: 'user/message', seq: 0, time: seedNow, data: checkpointMessage, surfaceOp: 'append' },
-      { type: 'turn/start', seq: 1, time: seedNow, data: { turn: 1 } },
-      { type: 'turn/end', seq: 2, time: seedNow, data: { turn: 1, reason: { kind: 'completed' } } },
-      { type: 'session/end-seed', seq: 3, time: seedNow, data: { inherited: true } },
+      { type: 'turn/start', seq: 0, time: seedNow, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: seedNow, data: { turn: 1, step: 1 } },
+      { type: 'system/message', seq: 2, time: seedNow, data: { turn: 1, step: 1, message: seedSystemMessage }, surfaceOp: 'append' },
+      { type: 'user/message', seq: 3, time: seedNow, data: checkpointMessage, surfaceOp: 'append' },
+      { type: 'step/end', seq: 4, time: seedNow, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 5, time: seedNow, data: { turn: 1, reason: { kind: 'completed' } } },
     ]
     // 0.4.90：新会话仍作为**顶层会话**出生（不挂 parentSession）。DSH 自己的
     // fork 会设 parentSession，但它的父会话从不归档；slim 的父会话必然归档，
@@ -1556,7 +1563,7 @@ export function apply(ctx, config) {
     var createArgs = {
       sessionId: newId,
       seed: seedEvents,
-      inheritedEventCount: 4,
+      inheritedEventCount: seedEvents.length,
       meta: seedMeta,
     }
     if (modelOptions) createArgs.agentOptions = modelOptions
