@@ -1,16 +1,33 @@
 # 发布产物（本地 tarball，可由 npm run pack:release 重建）
-release/
-release-diag/
+/release/
+/release-diag/
 
-# 依赖与缓存
-node_modules/
-.npm-cache/
+# 依赖、缓存与本地 agent 状态
+/node_modules/
+/.npm-cache/
+/.agents/
+**/.agents/
 
-# 开发期临时产物
+# 构建、覆盖率与临时输出
+/build/
+/dist/
+/coverage/
+/.nyc_output/
+*.tsbuildinfo
 .tmp-*
-tools/visualize-test/client.mermaid.js
-_h*.txt
+tmp/
+_artifacts/
 
-# 编辑器
+# 本地脚本和测试日志（源码 test/ 目录不忽略，测试属于仓库源文件）
+_h*.txt
+_bump*.cjs
+_patch*.cjs
+_fix-*.cjs
+*.log
+tools/visualize-test/client.mermaid.js
+
+# 编辑器和操作系统文件
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/

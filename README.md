@@ -80,6 +80,21 @@ npm run pack:release
 - Host 侧代码更新通常需要重启 DSH 宿主进程；
 - 纯 Client 修改在刷新页面后生效，开发环境中只有确认 web watcher 正在运行时才可期待 HMR。
 
+### 发布包边界
+
+发布包使用 `package.json` 的 `files` 白名单，而不是把整个仓库打进去。包内只保留运行时需要的内容：Host / Client 构建产物、组件 Host 入口、`cordis.patch.yml`、随包发布的 skills 和 README。
+
+以下内容明确不进入发布 tarball：
+
+- `test/`：保留在 Git 仓库中，但只用于开发和回归测试；
+- `src/`：Client 源码，仅在源码仓库中维护；
+- `scripts/`：构建脚本，仅在源码仓库中使用；
+- `build/`、`dist/`、`coverage/`、`tools/`、`release/`：构建、测试或本地发布辅助产物；
+- `vendor/`：源码构建时使用的 Mermaid 输入，运行时使用已生成的 `lib/client.mermaid.js`；
+- `.agents/`、缓存、临时文件和本地日志。
+
+`test/` 不放进 `.gitignore`，因为测试是项目源文件；它只通过发布白名单排除。这能保持开源仓库可验证，同时避免安装包混入测试和开发工具。
+
 ### 兼容性
 
 当前包声明的运行环境：

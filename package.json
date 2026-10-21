@@ -57,8 +57,6 @@
     "lib/index.js",
     "lib/client.js",
     "lib/client.mermaid.js",
-    "src/",
-    "scripts/build-client.cjs",
     "thinking-renderer/",
     "thinking-depth/",
     "composer-history/",
