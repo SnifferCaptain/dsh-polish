@@ -145,7 +145,7 @@ const ROW_ID = 'dsh-polish:keep-effort'
 const MAX_SESSIONS = 100
 const FLUSH_INTERVAL_MS = 5000
 // 进诊断快照（只变一次）：patch 文件里的块属于哪一版代码，一眼可辨。
-const VERSION = '0.4.98'
+const VERSION = '0.4.99'
 
 // 0.4.54 装载标记：每次模块装载一行（含 HMR 重载）。日志里有这行而
 // patch 文件无 config 块 → 模块已装载、apply 未执行（行 fiber 激活问题）；

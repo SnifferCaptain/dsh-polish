@@ -227,6 +227,20 @@
         )
       })
 
+      // 0.4.99：session-slim 的 mainView handoff 必须独立于设置页挂载。设置页
+      // 可能正是在旧主会话归档时被 shell 卸载；后台 watcher 仍要把 replacement
+      // 接管为 main，才能让 settings shell 不把这次短暂切换当成 onboarding。
+      ctx.inject(['sessions', 'uiWorkspace', 'configForms'], function (child) {
+        child.effect(
+          function () {
+            return child.configForms.whileServed([NS_SESSION_SLIM], function () {
+              return startSessionSlimBackground(child)
+            })
+          },
+          'dsh-polish: session slim main handoff',
+        )
+      })
+
       // ---- timer clock: the most robust data channel. A fresh remote read of
       // the whole settings document every 1.5s (remote.settings.describe() —
       // the same call DSH's own settings mirror makes to reach the Host), which

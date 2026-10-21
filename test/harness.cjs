@@ -3390,7 +3390,7 @@ sessionController: {
     )
     ok(
       'the package exports the prompts subpath and ships the directory at 0.4.85',
-      promptsPkg.version === '0.4.98' &&
+      promptsPkg.version === '0.4.99' &&
         promptsPkg.exports['./prompts'] &&
         promptsPkg.exports['./prompts'].default === './prompts/index.js' &&
         promptsPkg.files.indexOf('prompts/') >= 0,
@@ -4874,7 +4874,7 @@ sessionController: {
     // 块缺失即「行未被 Loader 激活」，诊断可判读。
     ok('0.4.53: side-channel registration failures cannot abort apply (fail-soft, recorded as setupError)', keRaw.indexOf('try {\n    ctx.effect(function () {') >= 0 && keRaw.indexOf('setupError') >= 0)
     ok('0.4.53: the settings.update return is not assumed thenable (defensive .then)', keRaw.indexOf("typeof update.then === 'function'") >= 0)
-      keRaw.indexOf("VERSION = '0.4.98'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
+      keRaw.indexOf("VERSION = '0.4.99'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
 
     // The carry decision is the whole component: pull the shipped pure function
     // out and exercise the matrix directly.
@@ -4894,7 +4894,7 @@ sessionController: {
 
     var keAtRow = kePatch.lastIndexOf("id: 'dsh-polish:keep-effort'")
     ok('the bundle patch ships the keep-effort row, enabled by default (no disabled flag on the row)', keAtRow >= 0 && kePatch.indexOf("name: 'dsh-polish/keep-effort'", keAtRow) !== -1 && kePatch.slice(keAtRow, keAtRow + 400).indexOf('disabled') < 0)
-      kePkg.version === '0.4.98' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
+      kePkg.version === '0.4.99' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
     var keNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'keep-effort', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', keNestPkg.name === 'dsh-polish-keep-effort' && keNestPkg.dsh === undefined && !!keNestPkg.exports && !!keNestPkg.exports['.'])
   }
@@ -5051,7 +5051,7 @@ sessionController: {
     ok('the replace re-verifies the live draft and never reuses a detached DOM anchor', skMentionRaw.indexOf('text.slice(start, start + token.length) !== token') >= 0 && skMentionRaw.indexOf('if (typeof root.focus === \'function\') root.focus()') >= 0 && skMentionRaw.indexOf('view.anchorNode') < 0)
     ok('the blue-span decoration engine and its apply.js wiring are gone', source.indexOf('createSkillMentionDecoration') === -1 && source.indexOf('dshp-skill-ref') === -1 && source.indexOf('syncSkillRef') === -1)
     ok('the host no longer rewrites sent messages (no marker, no pre-step)', skRaw.indexOf('SELECTED_SKILL_MARKER') < 0 && skRaw.indexOf("ctx.on('agent/pre-step'") < 0 && skRaw.indexOf('expandSelectedSkillText') < 0)
-      skPkg.version === '0.4.98'
+      skPkg.version === '0.4.99'
   }
 
   section('session-slim: K-suffix, message derivation, chunking, tree walk, fold (0.4.75 pure functions)')
@@ -5201,8 +5201,8 @@ sessionController: {
     ok('0.4.74 corpus failure falls back to the 0.4.73 whole-class subagent skip (live header.origin, cold subagent projection row)', slimHostSrc.indexOf("!haveCorpus && s.header && s.header.origin === 'subagent'") >= 0 && slimHostSrc.indexOf('!haveCorpus && rowsMap && rowsMap.subagent && rowsMap.subagent.val') >= 0)
     ok('0.4.74 rows are async with a single-flight rebuild and a sync cache for enqueue (the corpus list is async; 0.4.75 buildRows takes force to clear the corpus cache)', slimHostSrc.indexOf('async function buildRows(force) {') >= 0 && slimHostSrc.indexOf('rows: await buildRows(force)') >= 0 && slimHostSrc.indexOf('async function rowsNow(force) {') >= 0 && slimHostSrc.indexOf('rowsBuilding') >= 0 && slimHostSrc.indexOf('function cachedRowById(id) {') >= 0 && slimHostSrc.indexOf('var row = cachedRowById(id)') >= 0)
     ok('the installed schemastery 3.18 API only (no z.number().int())', slimHostSrc.indexOf('z.number().int') < 0 && slimHostSrc.indexOf('z.int') < 0)
-    ok('five fetch routes over the connection service (NOT volatile settings for row data)', slimHostSrc.indexOf('ctx.connection.fetch.register') >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/state'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/slim'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/refresh'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/stop'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/test-call'") >= 0 && slimHostSrc.indexOf('ctx.settings.update(NS') < 0)
-    ok('every route declares requestBody buffered (0.4.73: an undeclared GET route makes the bridge build a body-carrying GET Request, which the connection layer answers 400; core /api/file GET/HEAD is declared the same way)', (slimHostSrc.match(/requestBody: 'buffered',\s+fetch:/g) || []).length === 6)
+    ok('eight fetch routes over the connection service (NOT volatile settings for row data)', slimHostSrc.indexOf('ctx.connection.fetch.register') >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/state'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/handoff-state'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/slim'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/refresh'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/stop'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/handoff'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/test-call'") >= 0 && slimHostSrc.indexOf('ctx.settings.update(NS') < 0)
+    ok('every route declares requestBody buffered (0.4.73: an undeclared GET route makes the bridge build a body-carrying GET Request, which the connection layer answers 400; core /api/file GET/HEAD is declared the same way)', (slimHostSrc.match(/requestBody: 'buffered',\s+fetch:/g) || []).length === 8)
     ok('running sessions are skipped TREE-WIDE (0.4.74: main or any subagent descendant, row.running is the tree OR)', slimHostSrc.indexOf('agent.status === \'running\'') >= 0 && slimHostSrc.indexOf('if (row.running) {') >= 0 && slimHostSrc.indexOf('SLIM_RUNNING') >= 0 && slimHostSrc.indexOf('会话或其子代理正在进行中，已跳过') >= 0)
     ok('0.4.74 whole-tree activity pre-check via the DSH own waterfall (the same gate archiveSession uses internally) before ANY mutation (fail fast, no half-renamed state)', slimHostSrc.indexOf("'workspace/session-activity'") >= 0 && slimHostSrc.indexOf('SLIM_ACTIVE') >= 0 && slimHostSrc.lastIndexOf('SLIM_ACTIVE') < slimHostSrc.lastIndexOf('job.phase = \'renaming\''))
     ok('0.4.74 archive cascades to every subagent: archiveSession is NOT cascading (dsh-workspace source writes a single id), so each row.subIds descendant is archived explicitly after the main', slimHostSrc.lastIndexOf('archiveSession(subIds[si], {})') < slimHostSrc.lastIndexOf('archiveSession(id, {})') && slimHostSrc.indexOf('archivedSubagents: archivedSubs') >= 0)
@@ -5216,7 +5216,8 @@ sessionController: {
      ok('0.4.86 replacement safety: retain the create handle, require new-session visibility before old archive; 0.4.90 success path NO LONGER disposes (replacement stays a live idle session like a DSH fork), disposes only on failure paths', slimHostSrc.indexOf('newHandle = await ctx.agents.create(createArgs)') >= 0 && slimHostSrc.indexOf('newHandle.dispose()') >= 0 && slimHostSrc.indexOf('SLIM_NEW_NOT_VISIBLE') >= 0 && slimHostSrc.indexOf('sideEffects.newAgentStopped') >= 0 && slimHostSrc.indexOf('sideEffects.newVisible') >= 0 && slimHostSrc.indexOf("sideEffects.newAgentStopped = 'skipped'") >= 0 && slimHostSrc.indexOf("job.phase = 'stopping-new-agent'") < 0)
      ok('0.4.86 replacement inherits the original agent preset in durable session metadata', slimHostSrc.indexOf('liveAgentPreset = s.header') >= 0 && slimHostSrc.indexOf('agentPreset: coldHeader') >= 0 && slimHostSrc.indexOf('seedMeta.agentPreset') >= 0)
       ok('0.4.98 seed establishes a protected empty system head before the checkpoint, completes a turn, and lets Session append the sole inherited end-seed marker; this prevents restart-time system/message surface corruption', slimHostSrc.indexOf("import { BlockAssembler, createSystemMessage, createUserMessage }") >= 0 && slimHostSrc.indexOf("var seedSystemMessage = createSystemMessage('')") >= 0 && slimHostSrc.indexOf("type: 'turn/start', seq: 0") >= 0 && slimHostSrc.indexOf("type: 'step/start', seq: 1") >= 0 && slimHostSrc.indexOf("type: 'system/message', seq: 2") >= 0 && slimHostSrc.indexOf("message: seedSystemMessage") >= 0 && slimHostSrc.indexOf("type: 'user/message', seq: 3") >= 0 && slimHostSrc.indexOf("type: 'step/end', seq: 4") >= 0 && slimHostSrc.indexOf("type: 'turn/end', seq: 5") >= 0 && slimHostSrc.indexOf('inheritedEventCount: seedEvents.length') >= 0 && slimHostSrc.indexOf('isSeeded: true') >= 0 && slimHostSrc.indexOf('attachSession(newId)') >= 0 && slimHostSrc.indexOf("source: { kind: 'dsh-polish-session-slim' }") >= 0)
-    var seedBlockStart = slimHostSrc.indexOf('var seedEvents = [')
+    ok('0.4.99 background handoff: the Host pauses before archiving and accepts a matching Client mainView acknowledgement, with timeout fallback', slimHostSrc.indexOf("job.phase = 'handoff'") >= 0 && slimHostSrc.indexOf('function waitForMainHandoff(job, newSessionId)') >= 0 && slimHostSrc.indexOf('function acknowledgeMainHandoff(body)') >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/handoff-state'") >= 0 && slimHostSrc.indexOf("path: '/api/dshp/session-slim/handoff'") >= 0 && slimHostSrc.indexOf('await waitForMainHandoff(job, newId)') >= 0 && slimHostSrc.indexOf('handoff: currentJob.handoff || null') >= 0)
+     var seedBlockStart = slimHostSrc.indexOf('var seedEvents = [')
      var seedBlockEnd = slimHostSrc.indexOf('var seedMeta = {', seedBlockStart)
      var seedBlock = seedBlockStart >= 0 && seedBlockEnd > seedBlockStart ? slimHostSrc.slice(seedBlockStart, seedBlockEnd) : ''
       ok('0.4.98 seed block places protected system/message before checkpoint and omits a hand-written end-seed marker', seedBlock.indexOf("type: 'turn/start', seq: 0") >= 0 && seedBlock.indexOf("type: 'step/start', seq: 1") >= 0 && seedBlock.indexOf("type: 'system/message', seq: 2") >= 0 && seedBlock.indexOf("type: 'user/message', seq: 3") >= 0 && seedBlock.indexOf("type: 'step/end', seq: 4") >= 0 && seedBlock.indexOf("type: 'turn/end', seq: 5") >= 0 && seedBlock.indexOf("type: 'session/end-seed'") < 0)
@@ -5236,7 +5237,7 @@ sessionController: {
     var slimPatch = fs.readFileSync(path.join(__dirname, '..', 'cordis.patch.yml'), 'utf8')
     var slimAtRow = slimPatch.lastIndexOf("id: 'dsh-polish:session-slim'")
     ok('the bundle patch ships the session-slim row, disabled by default', slimAtRow >= 0 && slimPatch.indexOf("name: 'dsh-polish/session-slim'", slimAtRow) !== -1 && slimPatch.slice(slimAtRow, slimAtRow + 400).indexOf('disabled: true') >= 0)
-      slimPkg.version === '0.4.98' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
+      slimPkg.version === '0.4.99' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
     var slimNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'session-slim', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', slimNestPkg.name === 'dsh-polish-session-slim' && slimNestPkg.dsh === undefined && !!slimNestPkg.exports && !!slimNestPkg.exports['.'])
   }
@@ -5254,6 +5255,7 @@ sessionController: {
      ok('the 3-colour memory bar: DSH rss / other used / free over system total', slimClientRaw.indexOf('#e5534b') >= 0 && slimClientRaw.indexOf('#e0a63f') >= 0 && slimClientRaw.indexOf('系统总内存 ') >= 0 && slimClientRaw.indexOf('DSH 进程 ') >= 0)
     ok('queue section shows in-progress phases and done results/errors', slimClientRaw.indexOf('处理队列') >= 0 && slimClientRaw.indexOf('slimPhaseLabel(job.phase)') >= 0 && slimClientRaw.indexOf('archiveTitle') >= 0)
      ok('0.4.86 slim client labels the new-agent stop and sidebar-visibility verification phases', slimClientRaw.indexOf("'stopping-new-agent': '停止新 agent 中'") >= 0 && slimClientRaw.indexOf("'verifying-new': '确认新会话可见中'") >= 0)
+      ok('0.4.99 slim client keeps the operation in the background: a served watcher detects handoff, retains the replacement as mainView, and retries the acknowledgement', slimClientRaw.indexOf("var SLIM_HANDOFF_STATE_PATH = '/api/dshp/session-slim/handoff-state'") >= 0 && slimClientRaw.indexOf("var SLIM_HANDOFF_PATH = '/api/dshp/session-slim/handoff'") >= 0 && slimClientRaw.indexOf('function startSessionSlimBackground(child)') >= 0 && slimClientRaw.indexOf('child.uiWorkspace.openSession(job.newSessionId)') >= 0 && slimClientRaw.indexOf('child.sessions.list.getSnapshot()') >= 0 && slimClientRaw.indexOf("claimedKey = ''") >= 0 && slimApply.indexOf("ctx.inject(['sessions', 'uiWorkspace', 'configForms']") >= 0 && slimApply.indexOf('dsh-polish: session slim main handoff') >= 0)
     ok('settings card writes all five fields in one mutate (0.4.73: minFileBytes removed — event count is the only filter)', slimClientRaw.indexOf("path: ['minEvents']") >= 0 && slimClientRaw.indexOf('minFileBytes') < 0 && slimClientRaw.indexOf("path: ['compactProvider']") >= 0 && slimClientRaw.indexOf("path: ['compactEffort']") >= 0 && slimClientRaw.indexOf("path: ['batchSize']") >= 0 && slimClientRaw.indexOf('row.events >= minEvents') >= 0)
     var slimStyles = fs.readFileSync(path.join(__dirname, '..', 'src', 'client', 'shared', 'styles.js'), 'utf8')
 slimClientRaw.indexOf('按事件数筛选') >= 0 && slimClientRaw.indexOf('子代理折叠进父会话') >= 0 && slimClientRaw.indexOf('留空 = 用各会话自己的模型') >= 0 && slimClientRaw.indexOf('「事件数 ≥」是唯一筛选口径') < 0

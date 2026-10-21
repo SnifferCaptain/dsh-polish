@@ -293,6 +293,11 @@ var LLM_CALL_HARD_MS = 30 * 60000  // 0.4.78：单次模型调用总时长上限
 // 总结在并行下也要数小时，旧值会把正常任务在 map 中途强杀（看门狗的
 // 用途是清理挂死，不是限制工作量；单次调用仍受 LLM_CALL_HARD_MS 约束）。
 var SLIM_JOB_HARD_MS = 4 * 60 * 60000
+// 0.4.99：归档当前主会话前给 Client 一个短暂的 handoff 窗口。
+// 旧会话归档会让 ui-workspace 清掉 mainView；若此时页面正在设置面板，
+// ui-settings-general 会把「暂时没有 main session」视为 onboarding 并关闭设置。
+// Client 在这个阶段把新 replacement retain 为 main 后再确认，设置面板即可留在原处。
+var SLIM_MAIN_HANDOFF_MS = 2000
 var SUMMARIZE_CONCURRENCY = 4 // 0.4.79：分片 map 阶段的并行度
 var MERGE_GROUP_SIZE = 4      // 0.4.79：树形 reduce 每轮合并的分片数（4→1）
 // 0.4.80：单次压缩调用的输出预算上下限（65536 = DSH headroomTokens 默认；
@@ -940,6 +945,46 @@ export function apply(ctx, config) {
       error.code = 'SLIM_CANCELLED'
       throw error
     }
+  }
+
+  // 0.4.99：旧主会话若正是浏览器当前 mainView，归档它会触发 DSH Client
+  // 的 clearMain()，设置 shell 可能因短暂没有 main session 而自行关闭。让
+  // Client 在这个窗口内先 retain replacement；没有连接着的 Client 时超时
+  // 放行，后台/无浏览器调用不会被永久阻塞。
+  function waitForMainHandoff(job, newSessionId) {
+    job.phase = 'handoff'
+    job.handoff = { status: 'waiting', newSessionId: newSessionId, at: Date.now() }
+    var deadline = Date.now() + SLIM_MAIN_HANDOFF_MS
+    return new Promise(function (resolve) {
+      function poll() {
+        if (job.handoff && job.handoff.status !== 'waiting') {
+          resolve(job.handoff)
+          return
+        }
+        if (Date.now() >= deadline) {
+          job.handoff = { status: 'timeout', newSessionId: newSessionId, at: Date.now() }
+          resolve(job.handoff)
+          return
+        }
+        setTimeout(poll, 50)
+      }
+      poll()
+    })
+  }
+
+  function acknowledgeMainHandoff(body) {
+    var job = currentJob
+    var key = body && typeof body.key === 'string' ? body.key : ''
+    var newSessionId = body && typeof body.newSessionId === 'string' ? body.newSessionId : ''
+    if (!job || job.key !== key || job.phase !== 'handoff' || job.newSessionId !== newSessionId) {
+      return { ok: false, error: '没有匹配的在途 handoff' }
+    }
+    job.handoff = {
+      status: body.switched === true ? 'switched' : 'skipped',
+      newSessionId: newSessionId,
+      at: Date.now(),
+    }
+    return { ok: true, status: job.handoff.status }
   }
 
   // ---- 转录（热 = 内存日志；冷 = sessionQuery.readSession 完整回放日志）----
@@ -1752,6 +1797,11 @@ export function apply(ctx, config) {
     sideEffects.newAgentStopped = 'skipped'
     job.phase = 'verifying-new'
     await ensureNewVisible()
+    // 0.4.99：先让已连接的 Client 把 replacement 接管 mainView，再归档旧主会话。
+    // 这样设置面板不会因为 clearMain() 看到短暂的「没有当前会话」而退出；没有
+    // Client handoff 时 waitForMainHandoff 到时自动放行，仍保持纯后台调用可用。
+    await waitForMainHandoff(job, newId)
+    checkCancel(job)
 
     // 10) 新会话已经可用后，先处理子代理，再改名并归档旧主会话。
     //     这样子代理归档失败时，旧主会话仍保持原名和正常可见性；
@@ -1835,6 +1885,20 @@ export function apply(ctx, config) {
     })
   }
 
+  function handoffStateResponse() {
+    return json({
+      current: currentJob
+        ? {
+            key: currentJob.key,
+            sessionId: currentJob.sessionId,
+            phase: currentJob.phase,
+            newSessionId: currentJob.newSessionId || (currentJob.detail && currentJob.detail.newSessionId) || null,
+          }
+        : null,
+      now: Date.now(),
+    })
+  }
+
   async function stateResponse() {
     return json({
       rows: await rowsNow(false),
@@ -1888,6 +1952,7 @@ export function apply(ctx, config) {
              newSessionState: currentJob.newSessionState || null,
             warnings: Array.isArray(currentJob.warnings) ? currentJob.warnings : [],
              sideEffects: currentJob.sideEffects || null,
+             handoff: currentJob.handoff || null,
             at: currentJob.at,
             startedAt: currentJob.startedAt,
             finishedAt: currentJob.finishedAt,
@@ -1947,6 +2012,19 @@ export function apply(ctx, config) {
         fetch: async function (request) {
           try {
             return await stateResponse()
+          } catch (error) {
+            return json({ error: String((error && error.message) || error) }, 500)
+          }
+        },
+      })
+      // 0.4.99：后台 handoff 只返回当前任务，不重复传输完整 rows 表。
+      ctx.connection.fetch.register({
+        path: '/api/dshp/session-slim/handoff-state',
+        methods: ['GET'],
+        requestBody: 'buffered',
+        fetch: function () {
+          try {
+            return handoffStateResponse()
           } catch (error) {
             return json({ error: String((error && error.message) || error) }, 500)
           }
@@ -2045,6 +2123,23 @@ export function apply(ctx, config) {
             } catch (error) {
               return json({ ok: false, error: String((error && error.message) || error) })
             }
+          } catch (error) {
+            return json({ ok: false, error: String((error && error.message) || error) }, 500)
+          }
+        },
+      })
+      // 0.4.99：Client 在归档旧主会话前确认 replacement 已接管 mainView。
+      ctx.connection.fetch.register({
+        path: '/api/dshp/session-slim/handoff',
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: async function (request) {
+          try {
+            var body = {}
+            try {
+              body = await request.json()
+            } catch (error) {}
+            return json(acknowledgeMainHandoff(body))
           } catch (error) {
             return json({ ok: false, error: String((error && error.message) || error) }, 500)
           }
