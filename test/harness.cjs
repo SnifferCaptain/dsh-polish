@@ -1619,6 +1619,39 @@ function liveControlFor(overrides) {
     documentStub.activeElement = null
   }
 
+  section('composer-history: a fast second ↑ cannot reset recall while setDraft is still landing')
+  {
+    documentStub.__handlers['keydown'] = []
+    registrations.length = 0
+    state.historyRecords = [
+      { event: { seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: 'older' } } },
+      { event: { seq: 2, type: 'user/message', data: { source: { kind: 'user' }, content: 'newer' } } },
+    ]
+    const composer = domEl('div')
+    const anchor = domEl('span')
+    anchor.setAttribute('data-dshp-history', 'sess-race')
+    composer.appendChild(anchor)
+    const editable = domEl('div')
+    editable.isContentEditable = true
+    composer.appendChild(editable)
+    editable.parentNode = composer
+    documentStub.activeElement = editable
+    mod.apply(makeCtx({ namespaces: ['dsh-polish:composer-history'] }))
+    const cell = registrations.find((entry) => entry.options.id === 'dsh-polish:composer-history')
+    let draft = ''
+    // Simulate the asynchronous editor path: setDraft accepts the value, but
+    // the DOM has not reflected it when the user presses ↑ again.
+    const inputActions = { setDraft: (t) => { draft = t } }
+    render(cell.Component, { sessionId: 'sess-race', inputActions })
+    fireKeydown('ArrowUp')
+    await wait()
+    ok('race setup recalls the newest message through setDraft', draft === 'newer', JSON.stringify(draft))
+    ok('race setup leaves the DOM temporarily blank', editable.textContent === '', JSON.stringify(editable.textContent))
+    fireKeydown('ArrowUp')
+    ok('a fast second ↑ advances to the older message instead of resetting to newest', draft === 'older', JSON.stringify(draft))
+    documentStub.activeElement = null
+  }
+
   section('composer-history: recall is index-driven, so multi-line entries never drop to the caret')
   {
     documentStub.__handlers['keydown'] = []
@@ -3390,7 +3423,7 @@ sessionController: {
     )
     ok(
       'the package exports the prompts subpath and ships the directory at 0.4.85',
-      promptsPkg.version === '0.4.99' &&
+      promptsPkg.version === '0.4.100' &&
         promptsPkg.exports['./prompts'] &&
         promptsPkg.exports['./prompts'].default === './prompts/index.js' &&
         promptsPkg.files.indexOf('prompts/') >= 0,
@@ -4874,7 +4907,7 @@ sessionController: {
     // 块缺失即「行未被 Loader 激活」，诊断可判读。
     ok('0.4.53: side-channel registration failures cannot abort apply (fail-soft, recorded as setupError)', keRaw.indexOf('try {\n    ctx.effect(function () {') >= 0 && keRaw.indexOf('setupError') >= 0)
     ok('0.4.53: the settings.update return is not assumed thenable (defensive .then)', keRaw.indexOf("typeof update.then === 'function'") >= 0)
-      keRaw.indexOf("VERSION = '0.4.99'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
+      keRaw.indexOf("VERSION = '0.4.100'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
 
     // The carry decision is the whole component: pull the shipped pure function
     // out and exercise the matrix directly.
@@ -4894,7 +4927,7 @@ sessionController: {
 
     var keAtRow = kePatch.lastIndexOf("id: 'dsh-polish:keep-effort'")
     ok('the bundle patch ships the keep-effort row, enabled by default (no disabled flag on the row)', keAtRow >= 0 && kePatch.indexOf("name: 'dsh-polish/keep-effort'", keAtRow) !== -1 && kePatch.slice(keAtRow, keAtRow + 400).indexOf('disabled') < 0)
-      kePkg.version === '0.4.99' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
+      kePkg.version === '0.4.100' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
     var keNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'keep-effort', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', keNestPkg.name === 'dsh-polish-keep-effort' && keNestPkg.dsh === undefined && !!keNestPkg.exports && !!keNestPkg.exports['.'])
   }
@@ -5051,7 +5084,7 @@ sessionController: {
     ok('the replace re-verifies the live draft and never reuses a detached DOM anchor', skMentionRaw.indexOf('text.slice(start, start + token.length) !== token') >= 0 && skMentionRaw.indexOf('if (typeof root.focus === \'function\') root.focus()') >= 0 && skMentionRaw.indexOf('view.anchorNode') < 0)
     ok('the blue-span decoration engine and its apply.js wiring are gone', source.indexOf('createSkillMentionDecoration') === -1 && source.indexOf('dshp-skill-ref') === -1 && source.indexOf('syncSkillRef') === -1)
     ok('the host no longer rewrites sent messages (no marker, no pre-step)', skRaw.indexOf('SELECTED_SKILL_MARKER') < 0 && skRaw.indexOf("ctx.on('agent/pre-step'") < 0 && skRaw.indexOf('expandSelectedSkillText') < 0)
-      skPkg.version === '0.4.99'
+      skPkg.version === '0.4.100'
   }
 
   section('session-slim: K-suffix, message derivation, chunking, tree walk, fold (0.4.75 pure functions)')
@@ -5237,7 +5270,7 @@ sessionController: {
     var slimPatch = fs.readFileSync(path.join(__dirname, '..', 'cordis.patch.yml'), 'utf8')
     var slimAtRow = slimPatch.lastIndexOf("id: 'dsh-polish:session-slim'")
     ok('the bundle patch ships the session-slim row, disabled by default', slimAtRow >= 0 && slimPatch.indexOf("name: 'dsh-polish/session-slim'", slimAtRow) !== -1 && slimPatch.slice(slimAtRow, slimAtRow + 400).indexOf('disabled: true') >= 0)
-      slimPkg.version === '0.4.99' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
+      slimPkg.version === '0.4.100' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
     var slimNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'session-slim', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', slimNestPkg.name === 'dsh-polish-session-slim' && slimNestPkg.dsh === undefined && !!slimNestPkg.exports && !!slimNestPkg.exports['.'])
   }
