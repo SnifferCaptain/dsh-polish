@@ -48,6 +48,12 @@ DSH 的一组可独立开关的增强组件：思考展示、会话操作、提�
 
 compact 模型路线：页面上的选择**改完即生效**（不再需要另点保存），页面直接写明「瘦身使用：provider/model」——「测试调用」与瘦身因此永远是同一条路线。调用失败时错误里带实际路线；若失败是 provider 侧（余额 / 鉴权 / 限流），自动回退到**该会话自己最后用过的路线**并在任务详情里写明，只有回退也不可用才判失败。
 
+## 版本
+
+- 当前：`0.4.95`（tag `v0.4.95`，提交 `0711ad0`）。
+- 发布流程见下方「发布前检查」；产物是 `release/dsh-polish-<version>.tgz`，直接 `install_bundle` 安装，不需要先 remove。
+- v1.0.0 的门槛见上方「v1.0.0 发布前的待办」。
+
 ## 安装与更新
 
 在包目录执行：
@@ -83,16 +89,16 @@ node _check-live.mjs
 
 | # | 事项 | 现状 | 是否阻塞 v1.0.0 |
 | --- | --- | --- | :---: |
-| 1 | 版本控制 | 包目录与工作区**都不是 git 仓库**：没有历史、没有 tag、没有可回滚提交 | **是**（先 `git init` + 首次提交 + tag） |
+| 1 | 版本控制 | **已完成**：包目录已 `git init`（分支 `main`），首次提交 `0711ad0`，基线 tag `v0.4.95`，`.gitignore` 排除发布物与缓存 | 否 |
 | 2 | 发布物 | 只有本地 `release/*.tgz`（81 个），没有远端仓库、没有 npm 发布 | 否（内部插件可接受），但要写清分发方式 |
-| 3 | 工作目录卫生 | `.tmp-*.css/.js`、`_h09*.txt`、`_bump68.cjs` 等临时文件在包里（**不进发布物**，package.json 有 files 白名单） | 否，但要清掉 |
+| 3 | 工作目录卫生 | **已清理**：临时文件移到工作区 `_artifacts/`，包目录只剩产品文件 | 否 |
 | 4 | 文档一致性 | README 组件表已更新；`todo.md` 的历史章节编码损坏（GBK 混入），需重写或转码 | 否，但影响交接 |
 | 5 | 自动化 UI 回归 | 711 条断言覆盖宿主/客户端源码与行为；真实 GUI 仍靠人工核验（每轮 3 项） | 否，建议 v1.0.0 后补 |
 | 6 | DSH 核心限制 | `composedPreset(context.scope)` 恒为 undefined（scope key 不是 context）；preset 的 `composeAgent` / `presetForObservation` 是 controller 内部 | 否（已用 `agent.session.header.agentPreset` 绕过） |
 | 7 | 宿主半边生效方式 | 插件模块被 Node 的 ESM 缓存持有：升级后**客户端立即生效、宿主需重启 DSH 进程** | 否，但必须写进升级说明 |
 | 8 | 已知残留风险 | `timer`（默认停用，官方自动化任务已覆盖）、`notify`/`shell-local`/`visualize`/`keep-effort` 仍是 ⚠（依赖外部环境/权限） | 否，但 README 要保留 ⚠ 标注 |
 
-结论：**功能面已经收敛**（本轮三项 P0/P1 全部由用户实测通过：瘦身 replacement 可见、瘦身 provider 路由回退、提示词 complete 冲突消失）。真正的阻塞项只有 **#1 版本控制**——没有 git 就没有 tag、没有历史、也没有「v1.0.0 是什么」的锚点。补上 `git init` + 首次提交 + `v1.0.0` tag，再把 #3 的临时文件清掉，就可以发 v1.0.0。
+结论：**功能面已经收敛，阻塞项已清零**。本轮三项 P0/P1 全部由用户实测通过（瘦身 replacement 可见、瘦身 provider 路由回退、提示词 complete 冲突消失）；版本控制已补齐（`git init` + 首次提交 + `v0.4.95` tag），工作目录已清理，README 组件表与实现说明已对齐现状。发布 v1.0.0 只差一个动作：把 `package.json` 的版本改成 `1.0.0`、跑一遍「发布前检查」、打 `v1.0.0` tag。剩下的 ⚠ 项（timer/notify/shell-local/visualize/keep-effort）都是依赖外部环境或官方能力重叠的**已知边界**，不是待修 bug，保留标注即可。
 
 ## 目录速览
 
