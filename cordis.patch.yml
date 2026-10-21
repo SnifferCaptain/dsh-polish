@@ -1,0 +1,114 @@
+# dsh-polish bundle patch.
+#
+# Fourteen Loader rows: one bundle row plus thirteen independently toggleable components. Each row's
+# `name` must be an importable module specifier (the Loader calls
+# `tree.import(name)`), so the component rows point at subpath exports of this
+# package rather than at colon-qualified ids.
+#
+# The subpath resolves into a nested package directory that declares no
+# `dsh.client`. That matters twice over:
+#   * dsh-client-modules refuses to serve one package from several active
+#     Loader sources, and a subpath that resolved to this package's own
+#     manifest would look like a second source for `dsh-polish`;
+#   * the browser half of this package therefore mounts on the `dsh-polish`
+#     row alone, and registers the config page of every row below.
+- insert:
+    - id: dsh-polish
+      name: 'dsh-polish'
+
+    - id: 'dsh-polish:thinking-renderer'
+      name: 'dsh-polish/thinking-renderer'
+
+    - id: 'dsh-polish:thinking-depth'
+      name: 'dsh-polish/thinking-depth'
+
+    - id: 'dsh-polish:composer-history'
+      name: 'dsh-polish/composer-history'
+
+    - id: 'dsh-polish:workspace-lru'
+      name: 'dsh-polish/workspace-lru'
+
+    # In-memory countdown self-reminder: timer_set / timer_cancel tools inject a
+    # message into the session at fire time (followup -> flush, one model turn).
+    # Non-persistent (cleared on restart), minutes granularity, no catch-up.
+    # 0.4.49: DSH now ships the official 自动化任务 (dsh-schedule):
+    # schedule_create/list/update/delete tools + a sidebar task page, with
+    # after / every-N-seconds / daily / weekly / cron selectors, persistence
+    # across host restarts, catch-up of the last missed occurrence, delivery
+    # history, and a session-row clock mark in the SAME sidebar.session.row.
+    # leading seat as this component's icon. It fully covers this component's
+    # functionality and supersedes it, so the row is disabled by default.
+    # Re-enable the row switch to restore the old in-memory behavior.
+    - id: 'dsh-polish:timer'
+      name: 'dsh-polish/timer'
+      disabled: true
+
+    - id: 'dsh-polish:notify'
+      name: 'dsh-polish/notify'
+
+    - id: 'dsh-polish:mode-switch'
+      name: 'dsh-polish/mode-switch'
+
+    - id: 'dsh-polish:skill-loader'
+      name: 'dsh-polish/skill-loader'
+
+    # opencode mode: the built-in sandboxed shell executor skips the OS-level
+    # sandbox wrap (commands run with the harness process' file authority);
+    # the file-tool fence (dsh-fs-sandbox) is untouched. Disabled by default —
+    # the row switch is the master switch, and the row's `enabled` setting is a
+    # live kill switch that needs no restart.
+    - id: 'dsh-polish:shell-local'
+      name: 'dsh-polish/shell-local'
+      disabled: true
+
+    # Chat visualization: renders ```svg / ```mermaid code fences in chat
+    # messages as diagrams (strict-sanitized SVG via static <img>, lazily
+    # loaded bundled mermaid, settle-gated streaming, zero polling). Disabled
+    # by default — it is still being stabilized; the row switch is the master
+    # switch, and the svg/mermaid volatile toggles in its detail page are live
+    # kill switches that need no restart.
+    - id: 'dsh-polish:visualize'
+      name: 'dsh-polish/visualize'
+      disabled: true
+
+    # Custom system prompts: manages a small library of user prompt snippets
+    # and injects the selected one into every session's real system prompt —
+    # either appended ahead of the default prompt (default, safe) or as a
+    # complete replacement (one user prompt becomes the whole system prompt;
+    # collides with any deployment-level complete prompt). Settings gets a
+    # 提示词设置 section with live preview (captured from the assembly
+    # waterfall) and a copy-current-prompt button. Disabled by default; the
+    # row's `enabled` setting is a live kill switch that needs no restart.
+    - id: 'dsh-polish:prompts'
+      name: 'dsh-polish/prompts'
+      disabled: true
+
+    # Per-(session, model) reasoning-effort memory: remembers which effort each
+    # model actually ran at in a session and restores it when that model is
+    # re-selected — covering both the absent-effort case and the
+    # default-filled case (the UI's model switch without an explicit effort
+    # auto-fills the new model's defaultEffort; `carryOnDefault` covers that,
+    # off = strict mode). Each model only ever inherits its own recorded value,
+    # so differing provider effort vocabularies cannot conflict; a remembered
+    # value no longer supported is validated via llm.resolveCallConfig and
+    # silently skipped (no clamping, no mapping). Records persist in this row's
+    # config (effortRecords, capped at 100 most-recent sessions). Enabled by
+    # default — the row switch is the master switch.
+    - id: 'dsh-polish:keep-effort'
+      name: 'dsh-polish/keep-effort'
+
+    # Session slimming: condense a long session's whole history into one
+    # checkpoint (same instruction as the built-in /compact), rename the old
+    # session to 原名@K (K = max+1 over the same project's trailing @N — never
+    # collides), archive it (NOT deleted; findable in the workspace archive
+    # list), then create a fresh same-named session seeded with the
+    # checkpoint and the old session's model/effort selection. Running
+    # sessions are skipped. Row data travels over Host fetch routes
+    # (/dshp/session-slim/*, polled every 2.5s) — deliberately NOT volatile
+    # settings, to avoid the settings invalidation storm. Settings gets a
+    # 会话瘦身 section (list + filters + batch buttons + 3-colour memory bar
+    # + processing queue). Disabled by default; the row switch is the master
+    # switch and the row's `enabled` setting is a live kill switch.
+    - id: 'dsh-polish:session-slim'
+      name: 'dsh-polish/session-slim'
+      disabled: true

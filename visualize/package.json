@@ -1,0 +1,14 @@
+{
+  "name": "dsh-polish-visualize",
+  "version": "0.1.0",
+  "private": true,
+  "description": "dsh-polish component I — render ```svg / ```mermaid chat code fences as diagrams",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^0.2.0"
+  }
+}

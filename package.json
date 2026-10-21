@@ -1,0 +1,132 @@
+{
+  "name": "dsh-polish",
+  "version": "0.4.95",
+  "description": "DSH 增强组件集：思考计时/提示预览、↑ 消息召回、工作区 LRU、计时器、通知、模式切换、技能加载、本地 shell、提示词与工具提示、可视化、保持强度、会话瘦身，共 13 个可独立开关的组件。0.4.49 起 timer 默认停用（官方「自动化任务」已覆盖），打开插件行开关即恢复。",
+  "license": "MIT",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./thinking-renderer": {
+      "default": "./thinking-renderer/index.js"
+    },
+    "./thinking-depth": {
+      "default": "./thinking-depth/index.js"
+    },
+    "./composer-history": {
+      "default": "./composer-history/index.js"
+    },
+    "./workspace-lru": {
+      "default": "./workspace-lru/index.js"
+    },
+    "./timer": {
+      "default": "./timer/index.js"
+    },
+    "./notify": {
+      "default": "./notify/index.js"
+    },
+    "./mode-switch": {
+      "default": "./mode-switch/index.js"
+    },
+    "./skill-loader": {
+      "default": "./skill-loader/index.js"
+    },
+    "./prompts": {
+      "default": "./prompts/index.js"
+    },
+    "./shell-local": {
+      "default": "./shell-local/index.js"
+    },
+    "./visualize": {
+      "default": "./visualize/index.js"
+    },
+    "./keep-effort": {
+      "default": "./keep-effort/index.js"
+    },
+    "./session-slim": {
+      "default": "./session-slim/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/client.mermaid.js",
+    "src/",
+    "scripts/build-client.cjs",
+    "thinking-renderer/",
+    "thinking-depth/",
+    "composer-history/",
+    "workspace-lru/",
+    "timer/",
+    "notify/",
+    "mode-switch/",
+    "skill-loader/",
+    "prompts/",
+    "shell-local/",
+    "visualize/",
+    "keep-effort/",
+    "session-slim/",
+    "skills/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build:client": "node scripts/build-client.cjs",
+    "check:client": "node scripts/build-client.cjs --check",
+    "pack:release": "npm pack --pack-destination release"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "~3.18.4"
+  },
+  "engines": {
+    "dsh": ">=0.2.0-rc.1 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-chat": ">=0.2.0-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.1 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-ui-chat": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-home-paths": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "compatibility": {
+      "dsh": ">=0.2.0-rc.1 <0.3.0",
+      "dshReleases": {
+        "0.2.0-rc.2": "compatible",
+        "0.2.1-rc.1": "compatible",
+        "0.2.1-rc.2": "compatible"
+      }
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ],
+      "immediately": true
+    }
+  }
+}
