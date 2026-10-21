@@ -386,6 +386,8 @@ export const inject = [
   'sessionProjections',
   'sessionController',
   'sessionQuery',
+  'tools', // 0.4.97：工具集自检（新会话的工具数应与旧会话一致）
+  'agentPresets', // 0.4.97：把模式的组合（preset 的工具）挂到 replacement 上
 ]
 
 // DSH home 解析：优先官方 dsh-home-paths（$DSH_HOME 优先，否则 ~/.dsh，
@@ -1508,6 +1510,49 @@ export function apply(ctx, config) {
     job.phase = 'seeding'
     job.newSessionState = 'pending'
     var modelInherited = false
+    // 0.4.97：replacement 必须带上**模式的组合**（该模式的工具挂载）。
+    //
+    // 根因（用户实测）：瘦身完成后新会话没有该模式的工具——模型直接回答
+    // 「我没有对应的工具」，用户手动切一次模式工具才出现。
+    // DSH 的会话创建路径里，preset 的工具是在 agents.create({setup}) 的 setup
+    // 回调里挂的：
+    //   sessionController.composeAgent(id) → { agentPreset, setup }
+    //   setup: async (agentCtx, agent) => { installSelection(agent); await presets.mount(agentCtx, id) }
+    //   sessionController.createAgent() → agents.create({ ..., setup: composition.setup })
+    // 瘦身自己调 ctx.agents.create 时**没传 setup** → meta.agentPreset 只写进了
+    // 会话头（界面上模式显示正确），但 agent 的作用域里从未 mount 过 preset →
+    // 该模式的工具（tool-fs / tool-bash / …）一个都没有。
+    // 修法：用 sessionController.composeAgent 的同一个 setup 回调（拿不到
+    // controller 时退回 agentPresets.mount）。
+    var presetId = row && row.agentPreset ? String(row.agentPreset) : ''
+    var resolvedPresetId = presetId
+    var composition = null
+    if (presetId) {
+      try {
+        // controller 负责「这个 preset id 存在吗 / 归一化成哪个 id」
+        if (ctx.sessionController && typeof ctx.sessionController.composeAgent === 'function') {
+          composition = await ctx.sessionController.composeAgent(presetId)
+          if (composition && typeof composition.agentPreset === 'string' && composition.agentPreset) {
+            resolvedPresetId = composition.agentPreset
+          }
+        }
+      } catch (error) {
+        composition = null
+      }
+    }
+    // setup 只做一件事：把 preset 挂到新 agent 的作用域上（工具随之可见）。
+    // 不用 controller 的 setup——它还会调 installSelection，seeded 会话上那一步
+    // 可能抛「modelSelection projection 未注册」；模型由随后的 selectModel 负责。
+    var setup = null
+    if (resolvedPresetId && ctx.agentPresets && typeof ctx.agentPresets.mount === 'function') {
+      setup = async function (agentCtx) {
+        await ctx.agentPresets.mount(agentCtx, resolvedPresetId)
+      }
+    } else if (composition && typeof composition.setup === 'function') {
+      setup = composition.setup
+    }
+    var toolCountBefore = -1
+    var toolCountAfter = -1
     var createArgs = {
       sessionId: newId,
       seed: seedEvents,
@@ -1515,6 +1560,7 @@ export function apply(ctx, config) {
       meta: seedMeta,
     }
     if (modelOptions) createArgs.agentOptions = modelOptions
+    if (setup) createArgs.setup = setup
     var newHandle = null
     try {
       newHandle = await ctx.agents.create(createArgs)
@@ -1528,6 +1574,23 @@ export function apply(ctx, config) {
       }
       job.newSessionId = newId
       if (modelOptions) modelInherited = true
+      // 0.4.97：工具集自检——新会话的工具数应与旧会话一致（模式组合确实挂上了）。
+      // 数字写进 job.detail，页面上能直接看到（不再靠用户猜）。
+      try {
+        if (ctx.tools && typeof ctx.tools.schemas === 'function') {
+          var newAgent = ctx.agents.get(newId)
+          var oldAgent = ctx.agents.get(id)
+          toolCountBefore = oldAgent ? ctx.tools.schemas(oldAgent).length : -1
+          toolCountAfter = newAgent ? ctx.tools.schemas(newAgent).length : -1
+          job.detail =
+            '模式组合 ' + (presetId || '未指定') + '：工具 ' + toolCountBefore + ' → ' + toolCountAfter
+          if (toolCountBefore > 0 && toolCountAfter === 0) {
+            job.warnings = (job.warnings || []).concat([
+              '新会话没有继承该模式的工具（' + toolCountBefore + ' → 0）：手动切换一次模式即可恢复。',
+            ])
+          }
+        }
+      } catch (toolCheckError) {}
     } catch (error) {
       try {
         if (newHandle && typeof newHandle.dispose === 'function') await newHandle.dispose()
@@ -1745,6 +1808,11 @@ export function apply(ctx, config) {
       window: window,
       model: provider + '/' + model,
       modelInherited: modelInherited,
+      // 0.4.97：模式组合自检——新会话的工具数（旧 → 新）。两个数不相等说明
+      // 模式没挂全（用户看到的是「模型说它没有那个工具」）。
+      presetMounted: resolvedPresetId || '',
+      toolCountBefore: toolCountBefore,
+      toolCountAfter: toolCountAfter,
     }
   }
 

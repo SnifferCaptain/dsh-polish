@@ -730,6 +730,10 @@
             if (typeof job.detail.summaryChars === 'number') fullDetail += '，摘要 ' + job.detail.summaryChars + ' 字符'
             if (typeof job.detail.archivedSubagents === 'number' && job.detail.archivedSubagents > 0) fullDetail += '，连带归档子代理 ' + job.detail.archivedSubagents
             if (job.detail.modelInherited) fullDetail += '，已继承模型'
+            if (typeof job.detail.toolCountAfter === 'number' && job.detail.toolCountAfter >= 0) {
+              fullDetail +=
+                '，模式 ' + (job.detail.presetMounted || '未指定') + ' 工具 ' + job.detail.toolCountBefore + ' → ' + job.detail.toolCountAfter
+            }
           } else {
             fullDetail = job.error || '未知原因'
           }
