@@ -241,7 +241,7 @@
         )
       })
 
-      // 0.4.101：重装/HMR 后主动重新拉取一次权威 session catalog。
+      // 1.0.0：重装/HMR 后主动重新拉取一次权威 session catalog。
       // DSH Client 的初次 catalog 拉取可能早于 Host 的 persistence/workspace
       // 恢复完成；如果第一次 list 在这个窗口失败，workspace 仍有 sessionIds，
       // 但 sessions.list.byId 没有对应 summary，sidebar 会把这些成员全部省略。
