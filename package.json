@@ -96,8 +96,8 @@
     "README_zh.md"
   ],
   "scripts": {
-    "build:client": "node scripts/build-client.cjs",
-    "check:client": "node scripts/build-client.cjs --check",
+    "build:client": "node scripts/build-host-entry.cjs && node scripts/build-client.cjs && node scripts/build-mermaid-chunk.cjs",
+    "check:client": "node scripts/build-host-entry.cjs --check && node scripts/build-client.cjs --check && node scripts/build-mermaid-chunk.cjs --check",
     "pack:release": "npm pack --pack-destination release"
   },
   "dependencies": {
