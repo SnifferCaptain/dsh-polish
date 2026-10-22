@@ -1,0 +1,48 @@
+name: Release dsh-polish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+          registry-url: https://registry.npmjs.org
+
+      - name: Install runtime build dependencies
+        run: npm install --ignore-scripts --omit=peer
+
+      - name: Build Client bundle
+        run: npm run build:client
+
+      - name: Verify Client bundle
+        run: npm run check:client
+
+      - name: Pack release tarball
+        run: npm pack --pack-destination release
+
+      - name: Create GitHub Release and upload tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          gh release create "v${VERSION}" \
+            "release/dsh-polish-${VERSION}.tgz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "dsh-polish v${VERSION}" \
+            --generate-notes

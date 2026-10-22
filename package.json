@@ -92,7 +92,8 @@
     "session-slim/",
     "skills/",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README_zh.md"
   ],
   "scripts": {
     "build:client": "node scripts/build-client.cjs",
