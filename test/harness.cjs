@@ -675,6 +675,7 @@ function makeCtx(overrides) {
   // Remote, so the LRU component can be driven without the real stores.
   if (overrides && overrides.workspaces) ctx.workspaces = overrides.workspaces
   if (overrides && overrides.sessions) ctx.sessions = overrides.sessions
+  if (overrides && overrides.timer) ctx.timer = overrides.timer
   if (overrides && overrides.workspaceRemote) ctx.remote.workspace = overrides.workspaceRemote
   return ctx
 }
@@ -710,6 +711,31 @@ ok(
   keys.includes('plugins.row.config:dsh-polish#dsh-polish:workspace-lru'),
   keys.join(', '),
 )
+
+const catalogRefreshCalls = []
+const catalogRefreshTimers = []
+const catalogRefreshCtx = makeCtx({
+  namespaces: [],
+  sessions: {
+    refresh() {
+      catalogRefreshCalls.push('refresh')
+      return Promise.resolve()
+    },
+  },
+  timer: {
+    timeout(fn, delay) {
+      catalogRefreshTimers.push({ fn, delay })
+      return () => {}
+    },
+  },
+})
+mod.apply(catalogRefreshCtx)
+ok(
+  '0.4.101 schedules one delayed read-only session catalog refresh',
+  catalogRefreshTimers.length === 1 && catalogRefreshTimers[0].delay === 1500,
+)
+catalogRefreshTimers[0].fn()
+ok('0.4.101 executes the catalog refresh without opening or mutating a session', catalogRefreshCalls.length === 1)
 
 // ---------------------------------------------------------------------------
 // The shipped panel is not ours to replace: the model seat is a `single` slot
@@ -3423,7 +3449,7 @@ sessionController: {
     )
     ok(
       'the package exports the prompts subpath and ships the directory at 0.4.85',
-      promptsPkg.version === '0.4.100' &&
+      promptsPkg.version === '0.4.101' &&
         promptsPkg.exports['./prompts'] &&
         promptsPkg.exports['./prompts'].default === './prompts/index.js' &&
         promptsPkg.files.indexOf('prompts/') >= 0,
@@ -4907,7 +4933,7 @@ sessionController: {
     // 块缺失即「行未被 Loader 激活」，诊断可判读。
     ok('0.4.53: side-channel registration failures cannot abort apply (fail-soft, recorded as setupError)', keRaw.indexOf('try {\n    ctx.effect(function () {') >= 0 && keRaw.indexOf('setupError') >= 0)
     ok('0.4.53: the settings.update return is not assumed thenable (defensive .then)', keRaw.indexOf("typeof update.then === 'function'") >= 0)
-      keRaw.indexOf("VERSION = '0.4.100'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
+      keRaw.indexOf("VERSION = '0.4.101'") >= 0 && keRaw.indexOf('noteDiag({ appliedAt: Date.now(), enabled: true, version: VERSION })') >= 0 && keRaw.lastIndexOf('try {\n    flush()') > keRaw.indexOf('appliedAt: Date.now()')
 
     // The carry decision is the whole component: pull the shipped pure function
     // out and exercise the matrix directly.
@@ -4927,7 +4953,7 @@ sessionController: {
 
     var keAtRow = kePatch.lastIndexOf("id: 'dsh-polish:keep-effort'")
     ok('the bundle patch ships the keep-effort row, enabled by default (no disabled flag on the row)', keAtRow >= 0 && kePatch.indexOf("name: 'dsh-polish/keep-effort'", keAtRow) !== -1 && kePatch.slice(keAtRow, keAtRow + 400).indexOf('disabled') < 0)
-      kePkg.version === '0.4.100' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
+      kePkg.version === '0.4.101' && kePkg.exports['./keep-effort'] && kePkg.exports['./keep-effort'].default === './keep-effort/index.js' && kePkg.files.indexOf('keep-effort/') >= 0
     var keNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'keep-effort', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', keNestPkg.name === 'dsh-polish-keep-effort' && keNestPkg.dsh === undefined && !!keNestPkg.exports && !!keNestPkg.exports['.'])
   }
@@ -5084,7 +5110,7 @@ sessionController: {
     ok('the replace re-verifies the live draft and never reuses a detached DOM anchor', skMentionRaw.indexOf('text.slice(start, start + token.length) !== token') >= 0 && skMentionRaw.indexOf('if (typeof root.focus === \'function\') root.focus()') >= 0 && skMentionRaw.indexOf('view.anchorNode') < 0)
     ok('the blue-span decoration engine and its apply.js wiring are gone', source.indexOf('createSkillMentionDecoration') === -1 && source.indexOf('dshp-skill-ref') === -1 && source.indexOf('syncSkillRef') === -1)
     ok('the host no longer rewrites sent messages (no marker, no pre-step)', skRaw.indexOf('SELECTED_SKILL_MARKER') < 0 && skRaw.indexOf("ctx.on('agent/pre-step'") < 0 && skRaw.indexOf('expandSelectedSkillText') < 0)
-      skPkg.version === '0.4.100'
+      skPkg.version === '0.4.101'
   }
 
   section('session-slim: K-suffix, message derivation, chunking, tree walk, fold (0.4.75 pure functions)')
@@ -5270,7 +5296,7 @@ sessionController: {
     var slimPatch = fs.readFileSync(path.join(__dirname, '..', 'cordis.patch.yml'), 'utf8')
     var slimAtRow = slimPatch.lastIndexOf("id: 'dsh-polish:session-slim'")
     ok('the bundle patch ships the session-slim row, disabled by default', slimAtRow >= 0 && slimPatch.indexOf("name: 'dsh-polish/session-slim'", slimAtRow) !== -1 && slimPatch.slice(slimAtRow, slimAtRow + 400).indexOf('disabled: true') >= 0)
-      slimPkg.version === '0.4.100' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
+      slimPkg.version === '0.4.101' && slimPkg.exports['./session-slim'] && slimPkg.exports['./session-slim'].default === './session-slim/index.js' && slimPkg.files.indexOf('session-slim/') >= 0
     var slimNestPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'session-slim', 'package.json'), 'utf8'))
     ok('the nested component package declares no dsh.client (subpath isolation)', slimNestPkg.name === 'dsh-polish-session-slim' && slimNestPkg.dsh === undefined && !!slimNestPkg.exports && !!slimNestPkg.exports['.'])
   }
@@ -5289,6 +5315,7 @@ sessionController: {
     ok('queue section shows in-progress phases and done results/errors', slimClientRaw.indexOf('处理队列') >= 0 && slimClientRaw.indexOf('slimPhaseLabel(job.phase)') >= 0 && slimClientRaw.indexOf('archiveTitle') >= 0)
      ok('0.4.86 slim client labels the new-agent stop and sidebar-visibility verification phases', slimClientRaw.indexOf("'stopping-new-agent': '停止新 agent 中'") >= 0 && slimClientRaw.indexOf("'verifying-new': '确认新会话可见中'") >= 0)
       ok('0.4.99 slim client keeps the operation in the background: a served watcher detects handoff, retains the replacement as mainView, and retries the acknowledgement', slimClientRaw.indexOf("var SLIM_HANDOFF_STATE_PATH = '/api/dshp/session-slim/handoff-state'") >= 0 && slimClientRaw.indexOf("var SLIM_HANDOFF_PATH = '/api/dshp/session-slim/handoff'") >= 0 && slimClientRaw.indexOf('function startSessionSlimBackground(child)') >= 0 && slimClientRaw.indexOf('child.uiWorkspace.openSession(job.newSessionId)') >= 0 && slimClientRaw.indexOf('child.sessions.list.getSnapshot()') >= 0 && slimClientRaw.indexOf("claimedKey = ''") >= 0 && slimApply.indexOf("ctx.inject(['sessions', 'uiWorkspace', 'configForms']") >= 0 && slimApply.indexOf('dsh-polish: session slim main handoff') >= 0)
+      ok('0.4.101 refreshes the authoritative Client catalog after plugin startup without resuming agents or mutating storage', slimApply.indexOf("ctx.inject(['sessions', 'timer']") >= 0 && slimApply.indexOf('child.sessions.refresh()') >= 0 && slimApply.indexOf('child.timer.timeout(refreshCatalog, 1500)') >= 0 && slimApply.indexOf('dsh-polish: refresh session catalog after startup') >= 0)
     ok('settings card writes all five fields in one mutate (0.4.73: minFileBytes removed — event count is the only filter)', slimClientRaw.indexOf("path: ['minEvents']") >= 0 && slimClientRaw.indexOf('minFileBytes') < 0 && slimClientRaw.indexOf("path: ['compactProvider']") >= 0 && slimClientRaw.indexOf("path: ['compactEffort']") >= 0 && slimClientRaw.indexOf("path: ['batchSize']") >= 0 && slimClientRaw.indexOf('row.events >= minEvents') >= 0)
     var slimStyles = fs.readFileSync(path.join(__dirname, '..', 'src', 'client', 'shared', 'styles.js'), 'utf8')
 slimClientRaw.indexOf('按事件数筛选') >= 0 && slimClientRaw.indexOf('子代理折叠进父会话') >= 0 && slimClientRaw.indexOf('留空 = 用各会话自己的模型') >= 0 && slimClientRaw.indexOf('「事件数 ≥」是唯一筛选口径') < 0

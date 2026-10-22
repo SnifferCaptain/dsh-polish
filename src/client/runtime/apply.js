@@ -241,6 +241,35 @@
         )
       })
 
+      // 0.4.101：重装/HMR 后主动重新拉取一次权威 session catalog。
+      // DSH Client 的初次 catalog 拉取可能早于 Host 的 persistence/workspace
+      // 恢复完成；如果第一次 list 在这个窗口失败，workspace 仍有 sessionIds，
+      // 但 sessions.list.byId 没有对应 summary，sidebar 会把这些成员全部省略。
+      // 这是只读刷新，不恢复 Agent、不改 session 日志，也不改变 workspace 归属。
+      ctx.inject(['sessions', 'timer'], function (child) {
+        child.effect(
+          function () {
+            if (!child.timer || typeof child.timer.timeout !== 'function') return
+            var stopped = false
+            function refreshCatalog() {
+              if (stopped || !child.sessions || typeof child.sessions.refresh !== 'function') return
+              try {
+                var result = child.sessions.refresh()
+                if (result && typeof result.catch === 'function') result.catch(function () {})
+              } catch (error) {}
+            }
+            var dispose = child.timer.timeout(refreshCatalog, 1500)
+            return function () {
+              stopped = true
+              try {
+                if (typeof dispose === 'function') dispose()
+              } catch (error) {}
+            }
+          },
+          'dsh-polish: refresh session catalog after startup',
+        )
+      })
+
       // ---- timer clock: the most robust data channel. A fresh remote read of
       // the whole settings document every 1.5s (remote.settings.describe() —
       // the same call DSH's own settings mirror makes to reach the Host), which
