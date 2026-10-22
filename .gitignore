@@ -18,7 +18,8 @@
 /.npm-cache/
 **/.agents/
 
-# 本地脚本、临时输出与测试日志
+# 本地脚本、临时输出、测试日志与个人工作笔记
+/todo.md
 _h*.txt
 _bump*.cjs
 _patch*.cjs
