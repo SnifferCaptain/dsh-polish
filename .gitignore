@@ -1,30 +1,32 @@
-# 发布产物（本地 tarball，可由 npm run pack:release 重建）
+# 构建结果与发布产物
+# lib/ 是 npm pack 前由 build:client 生成的，不进入 Git。
+/lib/
+/build/
+/dist/
 /release/
 /release-diag/
+*.tsbuildinfo
+
+# 测试代码、测试夹具与本地测试工具不进入发布仓库
+/test/
+/tools/visualize-test/
+/coverage/
+/.nyc_output/
 
 # 依赖、缓存与本地 agent 状态
 /node_modules/
 /.npm-cache/
-/.agents/
 **/.agents/
 
-# 构建、覆盖率与临时输出
-/build/
-/dist/
-/coverage/
-/.nyc_output/
-*.tsbuildinfo
-.tmp-*
-tmp/
-_artifacts/
-
-# 本地脚本和测试日志（源码 test/ 目录不忽略，测试属于仓库源文件）
+# 本地脚本、临时输出与测试日志
 _h*.txt
 _bump*.cjs
 _patch*.cjs
 _fix-*.cjs
 *.log
-tools/visualize-test/client.mermaid.js
+.tmp-*
+tmp/
+_artifacts/
 
 # 编辑器和操作系统文件
 .DS_Store
