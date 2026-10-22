@@ -34,7 +34,9 @@ jobs:
         run: npm run check:client
 
       - name: Pack release tarball
-        run: npm pack --pack-destination release
+        run: |
+          mkdir -p release
+          npm pack --pack-destination release
 
       - name: Create GitHub Release and upload tarball
         env:
