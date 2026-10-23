@@ -71,7 +71,7 @@ The current state of thinking display, reasoning level, message recall, workspac
 The Git repository intentionally does not track `lib/`, `test/`, or other generated/development files. The GitHub Release tarball is therefore the recommended GitHub installation source:
 
 ```powershell
-dsh plugin --profile web add https://github.com/SnifferCaptain/dsh-polish/releases/download/v1.0.0/dsh-polish-1.0.0.tgz
+dsh plugin --profile web add https://github.com/SnifferCaptain/dsh-polish/releases/download/v1.0.1/dsh-polish-1.0.1.tgz
 ```
 
 After installation:
@@ -86,7 +86,7 @@ After installation:
 The package is also designed for npm publication:
 
 ```powershell
-dsh plugin --profile web add dsh-polish@1.0.0
+dsh plugin --profile web add dsh-polish@1.0.1
 ```
 
 ### Build and pack locally
@@ -187,7 +187,7 @@ The maintainer should also:
 - scan the final package for personal paths, credentials, and development-only files;
 - install the tarball in a clean DSH profile and verify `application: applied` plus actual page behavior.
 
-Current functional baseline: **v1.0.0**. Release history is recorded by Git tags.
+Current functional baseline: **v1.0.1**. Release history is recorded by Git tags.
 
 ## Known boundaries
 

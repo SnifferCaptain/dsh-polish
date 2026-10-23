@@ -129,11 +129,11 @@ export const Config = z.object({
    *  功能说明）；'replace' = 整份替换原描述（模型只看到用户文本）。 */
   toolPromptMode: z.string().default('append').volatile(),
   /** 0.4.67 手动刷新（客户端写入的运行期 nonce）：页面「刷新」按钮写一个
-   *  新的时间戳；宿主 1s 轮询发现变化后立即采纳**最近一次捕获**的工具集
-   *  与提示词（绕过 5 秒稳定性等待）。默认 0 = 从未请求。 */
+   *  新的时间戳；宿主 1s 轮询发现变化后重新读取全局工具注册表，并立即采纳
+   *  最近一次捕获的 agent 工具集与提示词（绕过 5 秒稳定性等待）。默认 0。 */
   refreshNonce: z.number().default(0).volatile(),
-  /** 运行时通道（volatile）：水幕捕获的工具列表（name + **原始**描述，
-   *  单条截断 6000 字符），供「工具提示」页展示；只随模型调用刷新。 */
+  /** 运行时通道（volatile）：全局注册表与水幕捕获合并后的工具列表（name +
+   *  **原始**描述，单条截断 6000 字符），供「工具提示」页展示。 */
   toolPreview: z
     .object({
       tools: z
@@ -199,8 +199,8 @@ export const Config = z.object({
 })
 
 // settings（轮询读 describe + 写回 update）、systemPrompt（section 注册 +
-// assemble 水幕）、timer（ctx.interval 轮询）。
-export const inject = ['settings', 'systemPrompt', 'timer', 'agents', 'agentPresets', 'connection']
+// assemble 水幕）、timer（ctx.interval 轮询）、tools（稳定的全局工具目录）。
+export const inject = ['settings', 'systemPrompt', 'timer', 'agents', 'agentPresets', 'connection', 'tools']
 
 export function apply(ctx, config) {
   var enabled = !config || config.enabled !== false
@@ -704,6 +704,8 @@ export function apply(ctx, config) {
   var toolHydrated = false
   var toolShownSig = null // 已发布并集的指纹（name|descLen，按 lastSeen 降序）
   var lastToolWriteAt = 0
+  var lastToolCatalogAt = 0
+  var TOOL_CATALOG_REFRESH_MS = 15000
   var previewCandidatePair = null // 候选文本对（effective + defaultText）
   var previewCandidateAt = 0
   // ---- 0.4.67 手动刷新：无条件记住「最近一次捕获」的内容（无论是否已
@@ -790,6 +792,24 @@ export function apply(ctx, config) {
         return
       }
       if (shapeChanged) flushToolUnion('toolPreview(union-change)')
+    } catch (error) {}
+  }
+
+  /**
+   * 全局工具目录是稳定的注册表，不应依赖某一次模型装配才能出现。
+   * `system-prompt/assemble` 仍然捕获 agent scope 的动态/受限工具；这里
+   * 额外读取 ctx.tools.schemas()，让页面打开后就能列出当前全局可见工具，
+   * 并让「刷新」真正重新读取注册表，而不是只重发内存缓存。
+   */
+  function refreshToolCatalog(force) {
+    try {
+      if (!ctx.tools || typeof ctx.tools.schemas !== 'function') return
+      var now = Date.now()
+      if (!force && now - lastToolCatalogAt < TOOL_CATALOG_REFRESH_MS) return
+      lastToolCatalogAt = now
+      var schemas = ctx.tools.schemas()
+      if (!Array.isArray(schemas) || schemas.length === 0) return
+      writeToolPreview(schemas, null)
     } catch (error) {}
   }
 
@@ -1028,8 +1048,9 @@ export function apply(ctx, config) {
     promoteTimer = setTimeout(function () {
       promoteTimer = 0
       try {
-        // 刷新 = 强制重发当前并集；工具并集在插件重载后已由
-        // hydrateToolUnion 从已保存的 toolPreview 恢复。
+        // 刷新必须重新读取工具注册表；仅重发内存并集无法发现新工具，
+        // 尤其是在插件重载后内存已清空的情况下。
+        refreshToolCatalog(true)
         if (Object.keys(toolSeen).length > 0) {
           flushToolUnion('refresh toolPreview (re-published union)')
         }
@@ -1218,6 +1239,8 @@ export function apply(ctx, config) {
   }
 
   function syncSection() {
+    // 全局注册表不需要等模型调用；动态 agent 工具仍由 assemble 捕获。
+    refreshToolCatalog(false)
     // 0.4.82：并集 TTL 扫——超过 TOOLS_RECENT_MS 没再被捕获的工具从列表
     // 消失（形状变化才落盘；首次捕获前 toolShownSig === null，不写空列表）。
     try {
