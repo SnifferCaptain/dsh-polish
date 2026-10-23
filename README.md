@@ -35,6 +35,8 @@ A collection of independently switchable enhancements for DeepSeek Harness (DSH)
 
 Built-in templates come directly from DSH preset definitions and do not require model probing. System prompts support append and full replacement. Because `minimal` has a complete default persona, full replacement intentionally takes over that persona.
 
+The Tool Prompts page reads the global `ctx.tools.schemas()` registry and keeps a stable snapshot. It never discovers tools from session model assembly, and background sessions cannot change the list while you edit. The snapshot is refreshed at plugin startup and only after an explicit refresh; a refresh is refused while unsaved tool-prompt edits exist.
+
 ### Session slimming
 
 `session-slim` compresses a long session into a checkpoint and creates a new visible session:
