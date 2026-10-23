@@ -369,6 +369,10 @@
 
         function requestRefresh() {
           if (!form || refreshing) return
+          if (toolDirty) {
+            setRefreshNote('有未保存的工具提示，请先保存后再刷新目录。')
+            return
+          }
           setRefreshing(true)
           setRefreshNote('已请求，1 秒内生效。')
           var cleared = false
@@ -850,10 +854,10 @@
         var statusNote = saveStatus === 'saved' ? '已保存，立即生效。' : saveStatus === 'failed' ? '保存被拒绝，请重试。' : null
 
         // ---------------------------------------------------- 0.4.45 工具提示页
-        // 数据通道：host 半在水幕捕获工具列表（name + **原始**描述，volatile
-        // toolPreview）；用户文本存 toolPrompts（toolName -> 文本，持久），
-        // 模式存 toolPromptMode。host 水幕监听器每次装配实时改写描述——
-        // 保存后下一次模型调用生效，无需重启。
+        // 数据通道：host 半从 ctx.tools.schemas() 建立全局工具目录快照，写入
+        // volatile toolPreview；用户文本存 toolPrompts（toolName -> 文本，持久），
+        // 模式存 toolPromptMode。只有用户明确点击刷新时才重新读取目录，
+        // 编辑过程中列表不会因 session 探测或后台模型调用而变化。
         var savedToolPrompts = value.toolPrompts && typeof value.toolPrompts === 'object' ? value.toolPrompts : {}
         if (toolDrafts === null) {
           var d0 = {}
@@ -922,16 +926,6 @@
                   { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
                   React.createElement('code', { style: { fontWeight: 600, fontSize: '13px' } }, tool.name),
                   text.trim() !== '' ? React.createElement('span', { className: 'dshp-tag' }, '已定制') : null,
-                  // 0.4.82：捕获时间 + 来源会话（并集列表可能含其他会话的
-                  // 工具——这行让来源一眼可辨）。
-                  tool.lastSeen
-                    ? React.createElement(
-                        'span',
-                        { style: { fontSize: '11px', color: 'var(--dsw-alias-label-tertiary, #6b7280)' } },
-                        '捕获于 ' + new Date(tool.lastSeen).toLocaleTimeString() +
-                          (tool.sessionTitle ? ' · ' + tool.sessionTitle : tool.sessionId ? ' · ' + String(tool.sessionId).slice(0, 8) + '…' : ''),
-                      )
-                    : null,
                   React.createElement('span', { style: { flex: '1 1 auto' } }),
                   tool.description
                     ? React.createElement(
@@ -1041,14 +1035,14 @@
                 React.createElement(
                   'span',
                   { className: 'dshp-hint' },
-                  '各会话工具集并集，保留 15 分钟',
+                  '全局工具注册表快照；只有手动刷新才更新',
                 ),
                 refreshNote ? React.createElement('span', { className: 'dshp-note' }, refreshNote) : null,
                 value.toolPreview && value.toolPreview.updatedAt
                   ? React.createElement(
                       'span',
                       { className: 'dshp-note' },
-                      '（当前列表捕获于 ' + new Date(value.toolPreview.updatedAt).toLocaleTimeString() + '）',
+                      '（快照时间 ' + new Date(value.toolPreview.updatedAt).toLocaleTimeString() + '）',
                     )
                   : null,
                                 ),
@@ -1107,7 +1101,7 @@
                     React.createElement(
                       'div',
                       { className: 'dshp-hint' },
-                      '工具列表为空：让任一会话完成一次模型调用即自动出现。',
+                      '工具目录为空：点击「刷新工具列表」重新读取当前注册表。',
                     ),
                   )
                 : toolRows,

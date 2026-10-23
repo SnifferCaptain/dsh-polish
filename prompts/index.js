@@ -129,10 +129,10 @@ export const Config = z.object({
    *  功能说明）；'replace' = 整份替换原描述（模型只看到用户文本）。 */
   toolPromptMode: z.string().default('append').volatile(),
   /** 0.4.67 手动刷新（客户端写入的运行期 nonce）：页面「刷新」按钮写一个
-   *  新的时间戳；宿主 1s 轮询发现变化后重新读取全局工具注册表，并立即采纳
-   *  最近一次捕获的 agent 工具集与提示词（绕过 5 秒稳定性等待）。默认 0。 */
+   *  新的时间戳；宿主 1s 轮询发现变化后重新读取全局工具注册表。
+   *  这是唯一的工具目录刷新入口；提示词文本仍绕过 5 秒稳定性等待。默认 0。 */
   refreshNonce: z.number().default(0).volatile(),
-  /** 运行时通道（volatile）：全局注册表与水幕捕获合并后的工具列表（name +
+  /** 运行时通道（volatile）：用户手动刷新得到的全局注册表快照（name +
    *  **原始**描述，单条截断 6000 字符），供「工具提示」页展示。 */
   toolPreview: z
     .object({
@@ -681,179 +681,53 @@ export function apply(ctx, config) {
   var lastDefault = null
   var activeMode = ''
 
-  // ---- 0.4.82 并集捕获（取代 0.4.65「最近稳定捕获」门控）。
-  //      稳定性门控有两个致命伤：(1) 多会话装配交替时，任何集合都凑不满 5
-  //      秒稳定，列表永远停在首个被捕获的集合；(2) 一个高频装配会话（后台
-  //      子代理，如只有 1 个工具 run_code）能把列表永久钉在那 1 个工具上——
-  //      用户主会话（几十个工具）永远不落地，「刷新」按钮也无效（它重发的
-  //      恰是「最近一次捕获」= 那 1 个工具）。用户三轮反馈「列表只有
-  //      run_code」即此。
-  //      并集语义：每次装配把它的工具集并入 toolSeen（每工具：描述 +
-  //      lastSeen + 来源会话身份——waterfall 第二参数 context.agent，
-  //      {agent, scope, signal?}）；页面展示 = 最近 TOOLS_RECENT_MS 内捕获
-  //      过的工具并集；新工具首次捕获后 1 秒内出现；TTL 到期自动移除。
-  //      写节流：只在形状变化（工具出现/消失、描述变化、来源会话变化）时
-  //      落盘——纯 lastSeen 更新不写（防 0.4.65 写风暴：每次写 = settings
-  //      全局失效 = 设置页整页重渲染）。提示词预览**文本**仍保留 5 秒
-  //      稳定门控（previewCandidate*，下方不变）。
-  var TOOLS_RECENT_MS = 15 * 60 * 1000
+  // 工具提示页使用全局注册表的显式快照；不会随模型装配或后台会话自动变动。
   // 提示词文本仍使用 5s 稳定门控：首次捕获立即显示，候选内容需连续
-   // 观察满 5s 才替换预览，避免装配过程中的短暂中间态污染页面。
-   var PROMPTS_STABLE_MS = 5000
-   var toolSeen = {} // toolName -> { description, lastSeen, sessionId, sessionTitle }
-  var toolHydrated = false
-  var toolShownSig = null // 已发布并集的指纹（name|descLen，按 lastSeen 降序）
-  var lastToolWriteAt = 0
-  var lastToolCatalogAt = 0
-  var TOOL_CATALOG_REFRESH_MS = 15000
+  // 观察满 5s 才替换预览，避免装配过程中的短暂中间态污染页面。
+  var PROMPTS_STABLE_MS = 5000
   var previewCandidatePair = null // 候选文本对（effective + defaultText）
   var previewCandidateAt = 0
-  // ---- 0.4.67 手动刷新：无条件记住「最近一次捕获」的内容（无论是否已
-  //      通过稳定性门控入库）。页面的「刷新」按钮经 refreshNonce 通知宿主
-  //      promoteLatest()：预览文本立即采纳最近捕获；工具列表（0.4.82 并集）
-  //      强制重发当前并集。
+  // 页面「刷新」通过 refreshNonce 通知宿主；宿主重新读取工具注册表。
   var latestPreviewPatch = null
   var lastSeenNonce = 0
 
-  // HMR/行重载后恢复已持久化的并集；否则刷新按钮只能重发空的内存 Map，
-  // 表现为「宿主有 toolPreview、点击刷新却没有列表变化」。
-  function hydrateToolUnion(value) {
-    if (toolHydrated) return
-    toolHydrated = true
-    var saved = value && value.toolPreview && Array.isArray(value.toolPreview.tools) ? value.toolPreview.tools : []
-    for (var i = 0; i < saved.length; i++) {
-      var tool = saved[i]
-      if (!tool || typeof tool.name !== 'string' || !tool.name) continue
-      toolSeen[tool.name] = {
-        description: typeof tool.description === 'string' ? tool.description : '',
-        lastSeen: typeof tool.lastSeen === 'number' ? tool.lastSeen : Date.now(),
-        sessionId: typeof tool.sessionId === 'string' ? tool.sessionId : '',
-        sessionTitle: typeof tool.sessionTitle === 'string' ? tool.sessionTitle : '',
-      }
-    }
-    if (saved.length > 0) toolShownSig = toolUnionSig(saved)
-  }
-
-  /** 工具列表（name + 原始描述，单条截断 6000 字符）→ volatile 通道。
-   *  指纹 = 名字 + 描述长度（不碰全文）。捕获的是**改写前**的原始描述——
-   *  那是用户写追加文本时的参照物。0.4.65：指纹变化不再立即写回，走稳定性
-   *  门控（见上方注释）。旧版两级指纹里的 cheap 捷径被移除：它无法区分
-   *  「与 shown 首尾名相同的中段改名候选」，会误打断候选计数。 */
-  /** 0.4.82：工具集并集记录——把本次装配的工具集并入 toolSeen。
-    *  每工具：description = 最新捕获（截 6000 字符；捕获的是**改写前**的
-    *  原始描述——那是用户写追加文本时的参照物），lastSeen = 当前时间，
-    *  sessionId/sessionTitle = 捕获它的那个会话（context.agent.session；
-    *  兜底 agent.id）。origin = waterfall 第二参数（{agent, scope, ...}）。
-    *  写节流：形状变化 → flushToolUnion 立即落盘；纯 lastSeen 更新不写。 */
-  function writeToolPreview(rawTools, origin) {
+  /** 将全局 ToolSchema 转成一个稳定的手动快照并写入 volatile 通道。 */
+  function publishToolCatalog(rawTools) {
     try {
-      hydrateToolUnion(findValue())
-       var now = Date.now()
-      var sessionId = ''
-      var sessionTitle = ''
-      try {
-        var agent = origin && origin.agent
-        if (agent) {
-          if (typeof agent.id === 'string') sessionId = agent.id
-          var ses = agent.session
-          if (ses && typeof ses.id === 'string') sessionId = ses.id
-          if (ses && ses.header && typeof ses.header === 'object') {
-            var hdr = ses.header
-            if (typeof hdr.title === 'string' && hdr.title !== '') sessionTitle = hdr.title
-            else if (typeof hdr.name === 'string') sessionTitle = hdr.name
-          }
-        }
-      } catch (error) {}
-      var shapeChanged = false
+      if (!Array.isArray(rawTools)) return
+      var now = Date.now()
+      var seen = {}
+      var list = []
       for (var t = 0; t < rawTools.length; t++) {
         var tool = rawTools[t]
-        if (!tool || typeof tool.name !== 'string') continue
-        var desc = typeof tool.description === 'string' ? tool.description.slice(0, 6000) : ''
-        var prev = toolSeen[tool.name]
-        if (!prev) {
-          toolSeen[tool.name] = { description: desc, lastSeen: now, sessionId: sessionId, sessionTitle: sessionTitle }
-          shapeChanged = true
-        } else {
-          if (prev.description !== desc) {
-            prev.description = desc
-            shapeChanged = true
-          }
-          prev.lastSeen = now
-          if (sessionId !== '' && sessionId !== prev.sessionId) {
-            prev.sessionId = sessionId
-            prev.sessionTitle = sessionTitle
-            shapeChanged = true
-          }
-        }
+        if (!tool || typeof tool.name !== 'string' || !tool.name || seen[tool.name]) continue
+        seen[tool.name] = true
+        list.push({
+          name: tool.name,
+          description: typeof tool.description === 'string' ? tool.description.slice(0, 6000) : '',
+          lastSeen: now,
+          sessionId: '',
+          sessionTitle: '',
+        })
       }
-      if (toolShownSig === null) {
-        // 首次捕获：立即写入，让页面有工具列表可展示。
-        flushToolUnion('toolPreview(first-capture)')
-        return
-      }
-      if (shapeChanged) flushToolUnion('toolPreview(union-change)')
+      list.sort(function (a, b) {
+        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+      })
+      stampWrite(ctx.settings.update(NS, { toolPreview: { tools: list, updatedAt: now } }), 'toolPreview(manual-catalog)')
     } catch (error) {}
   }
 
   /**
-   * 全局工具目录是稳定的注册表，不应依赖某一次模型装配才能出现。
-   * `system-prompt/assemble` 仍然捕获 agent scope 的动态/受限工具；这里
-   * 额外读取 ctx.tools.schemas()，让页面打开后就能列出当前全局可见工具，
-   * 并让「刷新」真正重新读取注册表，而不是只重发内存缓存。
+   * 工具提示页只展示全局注册表的手动快照，不依赖任何 session 或模型装配。
+   * 动态/受限工具仍由真正的 assembly 送给模型，但不会在用户编辑时改动此页。
    */
-  function refreshToolCatalog(force) {
+  function refreshToolCatalog() {
     try {
       if (!ctx.tools || typeof ctx.tools.schemas !== 'function') return
-      var now = Date.now()
-      if (!force && now - lastToolCatalogAt < TOOL_CATALOG_REFRESH_MS) return
-      lastToolCatalogAt = now
       var schemas = ctx.tools.schemas()
-      if (!Array.isArray(schemas) || schemas.length === 0) return
-      writeToolPreview(schemas, null)
+      if (!Array.isArray(schemas)) return
+      publishToolCatalog(schemas)
     } catch (error) {}
-  }
-
-  /** 0.4.82：当前并集列表（TTL 过期的工具顺带移除）。
-    *  排序 = lastSeen 降序（最近被看到的在前——页面最关心当前会话正在
-    *  用的工具）。 */
-  function unionList() {
-    var now = Date.now()
-    var out = []
-    for (var n in toolSeen) {
-      if (!Object.prototype.hasOwnProperty.call(toolSeen, n)) continue
-      var entry = toolSeen[n]
-      if (!entry || now - (entry.lastSeen || 0) > TOOLS_RECENT_MS) {
-        delete toolSeen[n]
-        continue
-      }
-      out.push({
-        name: n,
-        description: entry.description || '',
-        lastSeen: entry.lastSeen || 0,
-        sessionId: entry.sessionId || '',
-        sessionTitle: entry.sessionTitle || '',
-      })
-    }
-    out.sort(function (a, b) {
-      if (b.lastSeen !== a.lastSeen) return b.lastSeen - a.lastSeen
-      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-    })
-    return out
-  }
-
-  /** 0.4.82：并集指纹（name|描述长度；顺序稳定 = lastSeen 降序）。 */
-  function toolUnionSig(list) {
-    var sig = []
-    for (var i = 0; i < list.length; i++) sig.push(list[i].name + '|' + list[i].description.length)
-    return sig.join(';')
-  }
-
-  /** 0.4.82：把当前并集发布到 volatile 通道（页面 1 秒内可见新工具）。 */
-  function flushToolUnion(label) {
-    var list = unionList()
-    toolShownSig = toolUnionSig(list)
-    lastToolWriteAt = Date.now()
-    stampWrite(ctx.settings.update(NS, { toolPreview: { tools: list, updatedAt: Date.now() } }), label || 'toolPreview(union)')
   }
 
   /** 工具相关 section 的判定：tool:*（每工具一段使用须知）、tools:*
@@ -931,13 +805,6 @@ export function apply(ctx, config) {
       captureMode = captureSpec ? captureSpec.mode : ''
     } catch (error) {}
     lastPreviewPreset = capturePreset
-    // 工具列表独立于提示词文本变化（同一份提示词也可能换工具集），
-    // 所以放在下面的「文本去重早退」之前。
-    if (assembly && Array.isArray(assembly.tools)) {
-      try {
-        writeToolPreview(assembly.tools, context)
-      } catch (error) {}
-    }
     // 0.4.91：「整份替换」不再另起一个 complete section，而是**同名顶替**
     // deployment:persona-prefix —— 所以「我的 section」有两种名字，靠文本内容
     // 区分（preset 自己的 persona 与我的文本内容不同）。
@@ -1048,12 +915,8 @@ export function apply(ctx, config) {
     promoteTimer = setTimeout(function () {
       promoteTimer = 0
       try {
-        // 刷新必须重新读取工具注册表；仅重发内存并集无法发现新工具，
-        // 尤其是在插件重载后内存已清空的情况下。
-        refreshToolCatalog(true)
-        if (Object.keys(toolSeen).length > 0) {
-          flushToolUnion('refresh toolPreview (re-published union)')
-        }
+        // 刷新只重新读取稳定的全局工具注册表，不触碰正在编辑的文本。
+        refreshToolCatalog()
         if (
           latestPreviewPatch &&
           (lastEffective === null ||
@@ -1239,18 +1102,7 @@ export function apply(ctx, config) {
   }
 
   function syncSection() {
-    // 全局注册表不需要等模型调用；动态 agent 工具仍由 assemble 捕获。
-    refreshToolCatalog(false)
-    // 0.4.82：并集 TTL 扫——超过 TOOLS_RECENT_MS 没再被捕获的工具从列表
-    // 消失（形状变化才落盘；首次捕获前 toolShownSig === null，不写空列表）。
-    try {
-      var sweptList = unionList()
-      if (toolShownSig !== null && (sweptList.length === 0 || toolUnionSig(sweptList) !== toolShownSig)) {
-        flushToolUnion('toolPreview(union-sweep)')
-      }
-    } catch (error) {}
     var rowValue = findValue()
-    hydrateToolUnion(rowValue)
     var nonce = rowValue && typeof rowValue.refreshNonce === 'number' ? rowValue.refreshNonce : 0
     if (nonce !== lastSeenNonce) {
       lastSeenNonce = nonce
@@ -1309,6 +1161,8 @@ export function apply(ctx, config) {
          })
        }
        syncSection()
+        // 只在插件启动时建立一次目录快照；之后只响应用户的明确刷新。
+        refreshToolCatalog()
       try {
         var builtinPromise = refreshBuiltins()
         if (builtinPromise && typeof builtinPromise.catch === 'function') builtinPromise.catch(function () {})

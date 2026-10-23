@@ -71,7 +71,7 @@ DSH 的一组可独立开关的增强组件。组件以一个 Cordis bundle 发�
 Git 仓库有意不追踪 `lib/`、`test/` 和其他生成/开发文件。因此，从 GitHub 发布的 tarball 是 GitHub 渠道的推荐安装源：
 
 ```powershell
-dsh plugin --profile web add https://github.com/SnifferCaptain/dsh-polish/releases/download/v1.0.1/dsh-polish-1.0.1.tgz
+dsh plugin --profile web add https://github.com/SnifferCaptain/dsh-polish/releases/download/v1.0.2/dsh-polish-1.0.2.tgz
 ```
 
 安装后：
@@ -86,7 +86,7 @@ dsh plugin --profile web add https://github.com/SnifferCaptain/dsh-polish/releas
 该包也按 npm bundle 结构准备：
 
 ```powershell
-dsh plugin --profile web add dsh-polish@1.0.1
+dsh plugin --profile web add dsh-polish@1.0.2
 ```
 
 ### 本地构建和打包
@@ -187,7 +187,7 @@ npm run pack:release
 - 对最终包扫描个人路径、凭据和开发文件；
 - 在干净 DSH profile 中安装 tarball，并验证 `application: applied` 与实际页面行为。
 
-当前功能基线为 **v1.0.1**。发布历史以 Git tags 为准。
+当前功能基线为 **v1.0.2**。发布历史以 Git tags 为准。
 
 ## 已知边界
 
