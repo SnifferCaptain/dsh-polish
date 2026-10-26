@@ -45,8 +45,12 @@ import { BlockAssembler, createSystemMessage, createUserMessage } from '@deepsee
  *     surfaceTokens }（token-meter 投影：surfaceTokens = 当前上下文 token 数，
  *     contextWindow = 模型窗口）；rows.modelSelection.val.lastUsed =
  *     { provider, model, reasoningEffort? }；record.identity.cwd = 项目。
- *   · 热会话：ctx.sessions.list()（全量在内存会话，无 LRU 逐出）+
- *     ctx.sessionProjections.stateOf(session, key)（与投影缓存同键）。
+ *   · 热会话：ctx.sessions.list.getSnapshot().byId —— 线上 ctx.sessions 是
+ *     client 版 ClientSessions：list 是快照存储对象（不是可调用的 list()）；
+ *     byId[id].projectionValues = 与投影缓存同键的投影值（title /
+ *     contextPressure / modelSelection / agentPreset，冷会话亦有 cached
+ *     checkpoint 值，零 I/O）。快照无 seq → 事件数借用 projcache 文件的
+ *     maxSeq。
  *   · zstd 原始文件大小：`~/.dsh/sessions/<cwd-slug>/<id>/session.v4.jsonl.zstd`
  *     的 fs.stat（不解压）。cwd-slug 是 8.3 短名编码（中文 → ~XXXX~），
  *     不反推编码——直接遍历 sessions 下的工作区目录建 id→size 映射。
@@ -376,8 +380,8 @@ export const Config = z.object({
 })
 
 // settings（读行配置）、connection（fetch 路由）、llm（总结调用 + 路由验证）、
-// sessions（热会话 + flush）、agents（运行判定）、workspaceRegistry（归档 +
-// 工作区匹配）、sessionProjections（热会话投影状态）、sessionController
+// sessions（client 目录快照，只读零 I/O）、agents（运行判定）、
+// workspaceRegistry（归档 + 工作区匹配）、sessionController
 // （create/rename/selectModel/resolveAgent/followup 载体）、sessionQuery
 // （冷会话完整日志读取）。
 export const inject = [
@@ -388,7 +392,6 @@ export const inject = [
   'sessions',
   'agents',
   'workspaceRegistry',
-  'sessionProjections',
   'sessionController',
   'sessionQuery',
   'tools', // 0.4.97：工具集自检（新会话的工具数应与旧会话一致）
@@ -481,18 +484,6 @@ export function apply(ctx, config) {
     return map
   }
 
-  // ---- 投影状态读取（stateOf 返回原始 state 或其 {val} 包装，都容忍）----
-  function stateOf(session, key) {
-    try {
-      var s = ctx.sessionProjections ? ctx.sessionProjections.stateOf(session, key) : undefined
-      if (s === undefined) return undefined
-      if (s && typeof s === 'object' && 'val' in s) return s.val
-      return s
-    } catch (error) {
-      return undefined
-    }
-  }
-
   // ---- 行构建（0.4.74：父子折叠）----
   // 谱系来源：ctx.sessionQuery.listSessions() —— 侧栏用的同一份「完整
   // 逻辑语料」（live + persisted，带完整 header：origin / parentSession）。
@@ -503,7 +494,7 @@ export function apply(ctx, config) {
   //   running / live 树上任一为真即真；subIds = 全部后代 id（归档级联用）。
   //   孤儿子代理（parentSession 不在语料里）→ 按顶层行独立展示（不藏）。
   //   语料读取失败 → 退回 0.4.73 行为（整类跳过 subagent，不折叠）。
-  // 指标来源不变：热 = stateOf / 内存 log；冷 = projcache。
+  // 指标来源：热 = client 快照 projectionValues（事件数借 projcache maxSeq）；冷 = projcache。
   function descendantsOf(rootId, children) {
     var out = []
     var seenD = {}
@@ -556,8 +547,22 @@ export function apply(ctx, config) {
     var live = []
     var liveById = {}
     try {
-      live = ctx.sessions.list()
-      for (var li = 0; li < live.length; li++) liveById[live[li].id] = live[li]
+      // 0.4.98 修复：线上 ctx.sessions（client 版 ClientSessions）的 list 是快照
+      // 存储对象，旧写法 ctx.sessions.list() 恒抛 TypeError 被 catch 吞掉 →
+      // 热行在线上从不存在。
+      var snap =
+        ctx.sessions && ctx.sessions.list && typeof ctx.sessions.list.getSnapshot === 'function'
+          ? ctx.sessions.list.getSnapshot()
+          : null
+      if (snap && snap.byId) {
+        for (var lid in snap.byId) {
+          var lrow = snap.byId[lid]
+          if (lrow && lrow.id) {
+            liveById[lrow.id] = lrow
+            live.push(lrow)
+          }
+        }
+      }
     } catch (error) {}
     var running = {}
     try {
@@ -634,29 +639,64 @@ export function apply(ctx, config) {
       seen[r.id] = true
     }
 
+    // 冷/归档会话：projcache（sessionProjections 的持久缓存，v7）。先读成
+    // id→记录映射：热行也要借它的 maxSeq（client 快照无 seq），冷分支复用
+    // 同一份映射，不重复读文件。
+    var PROJCACHE_DIR = homePath('storages', 'session_projcache', 'sessions')
+    var coldById = {}
+    var files = []
+    try {
+      files = fs.readdirSync(PROJCACHE_DIR)
+    } catch (error) {}
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i]
+      if (file.slice(-5) !== '.json') continue
+      var cid = file.slice(0, -5)
+      var record = null
+      try {
+        record = JSON.parse(fs.readFileSync(path.join(PROJCACHE_DIR, file), 'utf8'))
+      } catch (error) {
+        continue
+      }
+      var identity = record && record.record ? record.record.identity : null
+      if (!identity) continue
+      var coldRowsMap = record && record.record ? record.record.rows : null
+      var coldMaxSeq = -1
+      if (coldRowsMap) {
+        for (var ckey in coldRowsMap) {
+          var crow = coldRowsMap[ckey]
+          if (crow && typeof crow.seq === 'number' && crow.seq > coldMaxSeq) coldMaxSeq = crow.seq
+        }
+      }
+      coldById[cid] = { identity: identity, rowsMap: coldRowsMap, maxSeq: coldMaxSeq }
+    }
+
     // 热会话先行（数据更新鲜；同 id 时热行优先于冷行）。
+    // 0.4.98：数据源 = client 目录快照 byId（projectionValues 与投影缓存同键）；
+    // 快照无投影值的条目交给下面的 projcache 冷分支。
     for (var k = 0; k < live.length; k++) {
       var s = live[k]
       if (!s || !visibleById[s.id]) continue
+      var pv = s.projectionValues || null
+      if (!pv) continue
       // 语料不可用时的 0.4.73 回退：subagent 整类跳过。
-      if (!haveCorpus && s.header && s.header.origin === 'subagent') continue
-      var liveTitle = stateOf(s, 'title')
-      var livePressure = stateOf(s, 'contextPressure') || null
-      var liveSelection = stateOf(s, 'modelSelection') || null
-      var liveAgentPreset = s.header && typeof s.header.agentPreset === 'string' ? s.header.agentPreset : stateOf(s, 'agentPreset') || null
-      var cwd = s.header && s.header.cwd ? s.header.cwd : null
-      var headerSeq = -1
-      try {
-        for (var h = 0; h < s.log.length; h++) {
-          if (typeof s.log[h].seq === 'number' && s.log[h].seq > headerSeq) headerSeq = s.log[h].seq
-        }
-      } catch (error) {}
+      if (!haveCorpus && s.origin === 'subagent') continue
+      var liveTitle = typeof pv.title === 'string' ? pv.title : typeof s.title === 'string' ? s.title : null
+      var livePressure = pv.contextPressure || null
+      var liveSelection = pv.modelSelection || null
+      var liveAgentPreset = typeof pv.agentPreset === 'string' ? pv.agentPreset : null
+      if (!liveAgentPreset && corpusById[s.id] && typeof corpusById[s.id].agentPreset === 'string') {
+        liveAgentPreset = corpusById[s.id].agentPreset
+      }
+      var cwd = typeof s.cwd === 'string' ? s.cwd : null
+      var coldRec = coldById[s.id]
+      var headerSeq = coldRec && typeof coldRec.maxSeq === 'number' ? coldRec.maxSeq : -1
       pushRow({
         id: s.id,
         project: projectOf(cwd),
         cwd: cwd,
-         agentPreset: typeof liveAgentPreset === 'string' ? liveAgentPreset : null,
-        title: typeof liveTitle === 'string' ? liveTitle : null,
+        agentPreset: liveAgentPreset,
+        title: liveTitle,
         events: headerSeq + 1,
         fileBytes: typeof fileSizes[s.id] === 'number' ? fileSizes[s.id] : null,
         ctxTokens: livePressure && typeof livePressure.surfaceTokens === 'number' ? livePressure.surfaceTokens : null,
@@ -665,54 +705,33 @@ export function apply(ctx, config) {
         model: liveSelection && liveSelection.lastUsed ? liveSelection.lastUsed.model : null,
         effort: liveSelection && liveSelection.lastUsed && liveSelection.lastUsed.reasoningEffort ? liveSelection.lastUsed.reasoningEffort : null,
         live: true,
-        running: !!running[s.id],
+        running: !!(s.running || running[s.id]),
         archived: archived.indexOf(s.id) >= 0,
-        parent: s.header && s.header.origin === 'subagent' && s.header.parentSession ? s.header.parentSession : null,
-         lineageComplete: !corpusLookupFailed && haveCorpus,
+        parent: s.origin === 'subagent' && s.parentId ? s.parentId : corpusById[s.id] && corpusById[s.id].origin === 'subagent' && corpusById[s.id].parentSession ? corpusById[s.id].parentSession : null,
+        lineageComplete: !corpusLookupFailed && haveCorpus,
       })
     }
 
-    // 冷/归档会话：projcache（sessionProjections 的持久缓存，v7）。
-    var PROJCACHE_DIR = homePath('storages', 'session_projcache', 'sessions')
-    var files = []
-    try {
-      files = fs.readdirSync(PROJCACHE_DIR)
-    } catch (error) {}
-    for (var i = 0; i < files.length; i++) {
-      var file = files[i]
-      if (file.slice(-5) !== '.json') continue
-      var id = file.slice(0, -5)
+    // 冷/归档会话：快照无投影值（或快照缺失）的条目，走 projcache 文件。
+    for (var ci2 in coldById) {
+      var id = ci2
       if (!visibleById[id]) continue
       if (seen[id]) continue
-      var record = null
-      try {
-        record = JSON.parse(fs.readFileSync(path.join(PROJCACHE_DIR, file), 'utf8'))
-      } catch (error) {
-        continue
-      }
-      var identity = record && record.record ? record.record.identity : null
-      var rowsMap = record && record.record ? record.record.rows : null
-      if (!identity) continue
+      var cdata = coldById[id]
+      var rowsMap = cdata.rowsMap
       // 语料不可用时的 0.4.73 回退（投影行 rows.subagent 仅子代理自身有值）。
       if (!haveCorpus && rowsMap && rowsMap.subagent && rowsMap.subagent.val) continue
       var title = rowsMap && rowsMap.title ? rowsMap.title.val : null
-      var maxSeq = -1
-      if (rowsMap) {
-        for (var key in rowsMap) {
-          var row = rowsMap[key]
-          if (row && typeof row.seq === 'number' && row.seq > maxSeq) maxSeq = row.seq
-        }
-      }
       var pressure = (rowsMap && rowsMap.contextPressure ? rowsMap.contextPressure.val : null) || null
       var selection = (rowsMap && rowsMap.modelSelection ? rowsMap.modelSelection.val : null) || null
       var coldHeader = corpusById[id]
       pushRow({
         id: id,
-        project: projectOf(identity.cwd),
-        cwd: identity.cwd || null,
-         agentPreset: coldHeader && typeof coldHeader.agentPreset === 'string' ? coldHeader.agentPreset : rowsMap && rowsMap.agentPreset && typeof rowsMap.agentPreset.val === 'string' ? rowsMap.agentPreset.val : null,
+        project: projectOf(cdata.identity.cwd),
+        cwd: cdata.identity.cwd || null,
+        agentPreset: coldHeader && typeof coldHeader.agentPreset === 'string' ? coldHeader.agentPreset : rowsMap && rowsMap.agentPreset && typeof rowsMap.agentPreset.val === 'string' ? rowsMap.agentPreset.val : null,
         title: typeof title === 'string' ? title : null,
-        events: maxSeq + 1,
+        events: cdata.maxSeq + 1,
         fileBytes: typeof fileSizes[id] === 'number' ? fileSizes[id] : null,
         ctxTokens: pressure && typeof pressure.surfaceTokens === 'number' ? pressure.surfaceTokens : null,
         ctxWindow: pressure && typeof pressure.contextWindow === 'number' ? pressure.contextWindow : null,
@@ -723,7 +742,7 @@ export function apply(ctx, config) {
         running: !!running[id],
         archived: archived.indexOf(id) >= 0,
         parent: coldHeader && coldHeader.origin === 'subagent' && coldHeader.parentSession ? coldHeader.parentSession : null,
-         lineageComplete: !corpusLookupFailed && haveCorpus,
+        lineageComplete: !corpusLookupFailed && haveCorpus,
       })
     }
 
@@ -1341,9 +1360,16 @@ export function apply(ctx, config) {
     //    区段已被 DSH 自身压缩替换为 checkpoint，窗口受模型窗口约束。完整
     //    历史日志不读、不总结。
     job.phase = 'reading'
-    var liveSession = null
+    // 0.4.98 修复：线上 client 版 ClientSessions 没有 .get()——旧路径恒为
+    // undefined（死路径）；也不能调 manager 的惰性 get()（会给冷会话建实例
+    // 驻留）。client 目录快照只读、零 I/O。
+    var liveData = null
     try {
-      liveSession = ctx.sessions.get ? ctx.sessions.get(id) : undefined
+      var snap =
+        ctx.sessions && ctx.sessions.list && typeof ctx.sessions.list.getSnapshot === 'function'
+          ? ctx.sessions.list.getSnapshot()
+          : null
+      liveData = snap && snap.byId && snap.byId[id] ? snap.byId[id] : null
     } catch (error) {}
     var surface = null
     try {
@@ -1355,13 +1381,9 @@ export function apply(ctx, config) {
     }
     var surf = surfaceFromEvents(surface && Array.isArray(surface.events) ? surface.events : [])
     var transcript = surf.messages
+    // tools 取 surface 中最后一个 request/header 事件 = 最新提交头（与 live
+    // requestHeader 同源）；readSurface 冷热皆可读，不需要 live 对象。
     var tools = surf.tools
-    if (liveSession) {
-      try {
-        var header = liveSession.requestHeader ? liveSession.requestHeader() : undefined
-        if (header && Array.isArray(header.tools) && header.tools.length > 0) tools = header.tools
-      } catch (error) {}
-    }
     if (!row.cwd && surface && surface.session && surface.session.cwd) row.cwd = surface.session.cwd
     var hasUser = false
     for (var ti = 0; ti < transcript.length; ti++) {
@@ -1380,9 +1402,9 @@ export function apply(ctx, config) {
     // 3) compact 模型：页面配置优先，留空继承会话 modelSelection。
     job.phase = 'summarizing'
     var lastUsed = null
-    if (liveSession) {
-      var liveSel = stateOf(liveSession, 'modelSelection')
-      if (liveSel && liveSel.lastUsed) lastUsed = liveSel.lastUsed
+    var liveSel = liveData && liveData.projectionValues ? liveData.projectionValues.modelSelection : null
+    if (liveSel && liveSel.lastUsed) {
+      lastUsed = liveSel.lastUsed
     } else {
       lastUsed = {
         provider: row.provider || null,
