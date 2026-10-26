@@ -2,19 +2,15 @@
     //
     // 组件 J：自定义系统提示词。两个界面：
     //   1) 行详情页（plugins.row.config）：总开关（实时关断，无需重启）。
-    //   2) 设置 → 提示词设置（settings.section）：主界面——
-    //      0.4.37 单列纵向版式（修掉横排「标签|控件」在宽控件下把
-    //      标签列压成单字宽的排版事故），四段自上而下：
-    //      ① 提示词预览（0.4.40 两层：来源 [当前生效|默认提示词] ×
-    //         视图 [模板|最终形态] + 复制当前提示词，卡片内展示；
-    //         模板视图 {{变量}} 原样保留并附图例，最终形态是同一批
-    //         section 代入运行时值后的正文；工具相关内容不展示——
-    //         这是提示词组件，工具 JSON 定义本就走 API 参数独立下发）；
-    //      ② 当前模式单选（默认 / 各自定义条目，整行可点的 radio 行，
-    //         选中态有底，行尾带模式标签 + 字符数）；
-    //      ③ 四个一键模板（节省 / 谨慎 / 牧羊人 / 文科生，附加模式）；
-    //      ④ 我的提示词库 CRUD（整体数组原子写入，规避多操作冲突；
-    //         编辑器为独立虚线卡片、纵向字段）。
+    //   2) 设置 → 提示词设置（settings.section）：主界面，三个顶层 tab（1.1.1，
+    //      系统提示词编写与模式选择分开，不再共享一个面板）：
+    //      · 系统提示词：模板库（4 个内置只读默认 + 自定义 CRUD，编辑器为
+    //        独立虚线卡片、纵向字段）+ 内置模板查看（模板原文，{{变量}} 原样保留）；
+    //      · 模式选择：每个模式（standard/ptc/cordis/minimal）用哪份提示词
+    //        （下拉 + 四个一键模板）+「模型实际看到的」最终形态预览
+    //        （内置 = DSH 默认；替换 = 你的文本；附加 = 你的文本 + DSH 默认）；
+    //      · 工具提示：只改描述文本，不改参数与行为——工具 JSON 定义
+    //        走 API 参数独立下发。
     //
     // 数据：host 半每 1s 对齐「激活条目 + 模式」并注册 systemPrompt section；
     // 水幕捕获的 preview 文本（volatile）由本页读 form 快照展示。本页用
@@ -244,13 +240,11 @@
         )
         var [saveStatus, setSaveStatus] = React.useState('')
         var [copied, setCopied] = React.useState(false)
-         var [tab, setTab] = React.useState('effective')
-         var [view, setView] = React.useState('template')
-         var [editor, setEditor] = React.useState(null)
-         var [builtinView, setBuiltinView] = React.useState(null)
-        // 0.4.45 顶层标签：system（系统提示词，原有四段）/ tools（工具提示，
-        // 改工具描述文本控制模型调用意愿）。drafts/mode 懒填充：初值取自
-        // 行设置，用户编辑后本地优先（保存前不回读）。
+          var [editor, setEditor] = React.useState(null)
+          var [builtinView, setBuiltinView] = React.useState(null)
+        // 1.1.1 顶层标签：system（系统提示词：模板库 + 编辑器 + 内置查看）/
+        // mode（模式选择：每模式生效提示词 + 最终形态预览）/ tools（工具提示）。
+        // drafts/mode 懒填充：初值取自行设置，用户编辑后本地优先（保存前不回读）。
         var [page, setPage] = React.useState('system')
          var [selectedPreset, setSelectedPreset] = React.useState('standard')
         var [toolDrafts, setToolDrafts] = React.useState(null)
@@ -478,28 +472,29 @@
             builtinMap[rEntry.id] = rEntry
           }
         }
-        var builtinForMode = builtinMap['builtin:' + selectedPreset] || null
         var builtinViewEntry = builtinView ? builtinMap[builtinView] || null : null
-        var shownText = ''
-        var shownFromBuiltin = false
-        if (builtinViewEntry) {
-          shownText = view === 'template' ? promptTextValue(builtinViewEntry.template) : promptTextValue(builtinViewEntry.text)
-          shownFromBuiltin = shownText.length > 0
-        } else {
-          if (view === 'template') {
-            shownText = tab === 'default' ? promptTextValue(preview.defaultTemplate) : promptTextValue(preview.effectiveTemplate)
+        // 系统提示词页：内置模板查看（模板原文，{{变量}} 原样保留）。
+        var viewText = builtinViewEntry
+          ? promptTextValue(builtinViewEntry.template) || promptTextValue(builtinViewEntry.text)
+          : ''
+        // 模式选择页：模型实际看到的——优先用宿主装配的 effective（preview.effective，
+        // 当前装配的地面真相，变量已代入）；尚未生成时按模式本地近似：
+        // 内置 = DSH 默认；整份替换 = 只有你的文本；附加 = 你的文本 + DSH 默认。
+        var modeDefaultText = promptTextValue(preview.defaultText)
+        var modeFinalText = promptTextValue(preview.effective)
+        if (modeFinalText.length === 0) {
+          if (activeEntry) {
+            var modeUserContent = promptTextValue(activeEntry.content)
+            modeFinalText = activeMode === 'replace' ? modeUserContent : modeUserContent + (modeDefaultText ? '\n\n' + modeDefaultText : '')
           } else {
-            shownText = tab === 'default' ? promptTextValue(preview.defaultText) : promptTextValue(preview.effective)
-          }
-          if (!shownText && builtinForMode && (tab === 'default' || active.indexOf('builtin:') === 0)) {
-            shownText = view === 'template' ? promptTextValue(builtinForMode.template) : promptTextValue(builtinForMode.text)
-            shownFromBuiltin = shownText.length > 0
+            modeFinalText = modeDefaultText
           }
         }
-        var showCopy = shownText.length > 0
-        function doCopy() {
-          if (!showCopy) return
-          copyPromptText(shownText).then(
+        var modeFinalHint = modeFinalText.length === 0 ? '下一次模型调用后生成' : ''
+
+        function doCopy(text) {
+          if (!text || text.length === 0) return
+          copyPromptText(text).then(
             function () {
               setCopied(true)
               setTimeout(function () {
@@ -510,35 +505,11 @@
           )
         }
 
-        // 模板视图的变量图例：{{model}} = 当前模型名 …（让用户看清哪些是运行时填的）。
-        var varLegend = []
-        if (view === 'template' && Array.isArray(preview.variables)) {
-          for (var vi = 0; vi < preview.variables.length; vi++) {
-            var vv = preview.variables[vi]
-            if (vv && typeof vv.name === 'string' && vv.name) varLegend.push('{{' + vv.name + '}} = ' + vv.value)
-          }
-        }
-        var viewNote =
-          view === 'template'
-            ? '模板视图：{{变量}} 未代入' + (varLegend.length > 0 ? ' · ' + varLegend.join(' · ') : '')
-            : '最终形态：变量已代入'
-
-        var previewEmptyHint =
-          view === 'template'
-            ? tab === 'default'
-              ? '下一次模型调用后生成'
-              : '下一次模型调用后生成'
-            : tab === 'default'
-              ? '下一次模型调用后生成'
-              : activeMode === 'replace'
-                ? '整份替换：模型只看你的文本'
-                : '下一次模型调用后生成'
-
-        // ---------------------------------------------------- 0.4.90 重排版
-        // 层次：① 当前配置（preset 分段选择 + 生效提示词下拉）→ ② 预览 → ③ 我的库。
+        // ---------------------------------------------------- 1.1.1 重排版
+        // 层次：① 系统提示词（模板库 + 编辑器 + 内置查看）→ ② 模式选择（每模式
+        // 生效提示词 + 一键模板 + 最终形态预览）→ ③ 工具提示。
         // 逻辑层不动：selectedPreset / active / selectActive / customs / activeMode
-        // 等状态与 handler 全部沿用；只重排呈现、删冗余说明、消灭换行
-        // （preset 分段 nowrap，note 收进 title 悬停提示）。
+        // 等状态与 handler 全部沿用；只重排呈现。
         var presetTabLabel = { standard: '标准', ptc: 'ptc', cordis: '创造', minimal: '极简' }
         var presetTabs = React.createElement(
           'div',
@@ -589,7 +560,8 @@
 
         // ---------------------------------------------------- 模板库列表
         // 0.4.90：先列 4 个内置只读的「按模式默认模板」（单射 mode->builtin:mode），
-        // 再列自定义模板。内置项不可编辑/删除，只能被下拉选中。
+        // 再列自定义模板。内置项不可编辑/删除；模板原文在本页查看，
+        // 每个模式生效用哪一份在模式选择页选择。
         var libraryRows = []
         for (var bri = 0; bri < PROMPTS_BUILTINS.length; bri++) {
           ;(function (b) {
@@ -613,7 +585,6 @@
                   { className: 'dshp-note', style: { flex: '0 0 auto' } },
                   builtinMap[b.id] ? builtinMap[b.id].text.length + ' 字符' : '未解析',
                 ),
-                React.createElement('span', { className: 'dshp-note', style: { flex: '0 0 auto' } }, '不可编辑'),
                 React.createElement(
                   'button',
                   { type: 'button', className: 'dshp-btn', style: { flex: '0 0 auto', whiteSpace: 'nowrap' }, onClick: function () { setBuiltinView(b.id) } },
@@ -644,19 +615,6 @@
                   'span',
                   { className: 'dshp-note', style: { flex: '0 0 auto' } },
                   promptTextValue(entry.content).length + ' 字符',
-                ),
-                React.createElement(
-                  'button',
-                  {
-                    type: 'button',
-                    className: 'dshp-btn',
-                    style: { flex: '0 0 auto', whiteSpace: 'nowrap' },
-                    disabled: !writable || busy || active === entry.id,
-                    onClick: function () {
-                      selectActive(entry.id)
-                    },
-                  },
-                  '设为当前',
                 ),
                 React.createElement(
                   'button',
@@ -991,10 +949,85 @@
           ),
           React.createElement(
             'button',
+            { type: 'button', className: page === 'mode' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setPage('mode') } },
+            '模式选择',
+          ),
+          React.createElement(
+            'button',
             { type: 'button', className: page === 'tools' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setPage('tools') } },
             '工具提示',
           ),
         )
+
+        // ------------------------------------------------------------ 模式选择页
+        // 每个模式用哪份提示词 + 模型实际看到的最终形态（单一来源，无矩阵）。
+        if (page === 'mode') {
+          return React.createElement(
+            'div',
+            { className: 'dshp-form' },
+            pageTabs,
+            React.createElement(
+              'div',
+              { className: 'dshp-section' },
+              React.createElement(
+                'div',
+                { className: 'dshp-section-head' },
+                React.createElement('div', { className: 'dshp-label' }, '模式选择'),
+                React.createElement('div', { className: 'dshp-hint' }, '每个模式使用哪份系统提示词'),
+              ),
+              React.createElement(
+                'div',
+                { className: 'dshp-card' },
+                presetTabs,
+                React.createElement(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'nowrap' } },
+                  React.createElement('span', { className: 'dshp-label', style: { flex: '0 0 auto' } }, '生效提示词'),
+                  React.createElement('div', { style: { flex: '1 1 auto', minWidth: 0 } }, activeSelect),
+                  React.createElement('span', { className: 'dshp-tag' }, activeModeTag),
+                ),
+                React.createElement(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', rowGap: '6px', flexWrap: 'wrap' } },
+                  React.createElement('span', { className: 'dshp-label', style: { flex: '0 0 auto' } }, '一键模板'),
+                  templateButtons,
+                ),
+              ),
+            ),
+            React.createElement(
+              'div',
+              { className: 'dshp-section' },
+              React.createElement(
+                'div',
+                { className: 'dshp-section-head' },
+                React.createElement('div', { className: 'dshp-label' }, '模型实际看到的'),
+                React.createElement('div', { className: 'dshp-hint' }, '该模式发送的系统提示词最终形态（变量已代入）'),
+              ),
+              React.createElement(
+                'div',
+                { className: 'dshp-card' },
+                React.createElement(
+                  'pre',
+                  { className: 'dshp-preview', style: { marginTop: '4px' } },
+                  modeFinalText.length > 0
+                    ? modeFinalText
+                    : React.createElement('span', { style: { color: 'var(--dsw-alias-label-tertiary, #9aa0a6)' } }, modeFinalHint),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'dshp-preview-meta', style: { marginTop: '6px' } },
+                  React.createElement(
+                    'button',
+                    { type: 'button', className: 'dshp-btn', disabled: modeFinalText.length === 0, onClick: function () { doCopy(modeFinalText) } },
+                    copied ? '已复制' : '复制',
+                  ),
+                  React.createElement('span', { className: 'dshp-note' }, modeFinalHint || (modeFinalText.length + ' 字符')),
+                ),
+              ),
+            ),
+            statusNote ? React.createElement('div', { className: 'dshp-footer' }, React.createElement('span', { className: 'dshp-note' }, statusNote)) : null,
+          )
+        }
 
         if (page === 'tools') {
           var toolsSection = React.createElement(
@@ -1116,99 +1149,15 @@
           )
         }
 
-        // 0.4.90 版式（单列纵向，三段，层次自上而下）：
-        //   ① 当前配置——选 preset（分段）+ 选生效提示词（下拉），主操作；
-        //   ② 提示词预览——只读，看模型实际看到什么（来源 × 视图）；
-        //   ③ 我的提示词——库管理（列表 + 新建 + 模板一键）。
-        // 删掉大段说明文字、消灭换行；逻辑层（状态/handler/数据派生）完全不动。
+        // 1.1.1 版式：系统提示词页 = 模板库（内置 + 自定义 + 编辑器）+ 内置查看；
+        // 模式选择页 = 每模式生效提示词 + 一键模板 + 最终形态预览。
+        // 来源 × 视图矩阵退场：内置查看显示模板原文，模式页显示最终形态，
+        // 各单一来源，不再有「当前生效/默认 × 模板/最终形态」的对照困惑。
         return React.createElement(
           'div',
           { className: 'dshp-form' },
           pageTabs,
-          // ------------------------------------------------------------ ① 当前配置
-          React.createElement(
-            'div',
-            { className: 'dshp-section' },
-            React.createElement(
-              'div',
-              { className: 'dshp-section-head' },
-              React.createElement('div', { className: 'dshp-label' }, '当前配置'),
-            ),
-            React.createElement(
-              'div',
-              { className: 'dshp-card' },
-              presetTabs,
-              React.createElement(
-                'div',
-                { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px', flexWrap: 'nowrap' } },
-                React.createElement('span', { className: 'dshp-label', style: { flex: '0 0 auto' } }, '生效提示词'),
-                React.createElement('div', { style: { flex: '1 1 auto', minWidth: 0 } }, activeSelect),
-                React.createElement('span', { className: 'dshp-tag' }, activeModeTag),
-              ),
-            ),
-          ),
-          // ------------------------------------------------------------ ② 提示词预览
-          React.createElement(
-            'div',
-            { className: 'dshp-section' },
-            React.createElement(
-              'div',
-              { className: 'dshp-section-head' },
-              React.createElement('div', { className: 'dshp-label' }, '提示词预览'),
-            ),
-            React.createElement(
-              'div',
-              { className: 'dshp-card' },
-              React.createElement(
-                'div',
-                // 0.4.94：按钮整体换行（不换行的是**文字**——按钮本体 nowrap，
-                // 见 styles.js）。此前整行 nowrap + 按钮可收缩 → 点一下「刷新」
-                // 状态文案一变就把按钮挤扁、文字溢出按钮外。
-                { style: { display: 'flex', alignItems: 'center', gap: '8px', rowGap: '6px', flexWrap: 'wrap' } },
-                React.createElement('button', { type: 'button', className: tab === 'effective' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setTab('effective') } }, '当前生效'),
-                React.createElement('button', { type: 'button', className: tab === 'default' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setTab('default') } }, '默认'),
-                React.createElement('button', { type: 'button', className: view === 'template' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setView('template') } }, '模板'),
-                React.createElement('button', { type: 'button', className: view === 'final' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setView('final') } }, '最终形态'),
-                React.createElement('span', { style: { flex: '1 1 auto' } }),
-                React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: refreshing, onClick: requestRefresh }, refreshing ? '刷新中…' : '刷新'),
-                React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: !showCopy, onClick: doCopy }, copied ? '已复制' : '复制'),
-              ),
-              // 0.4.94：提示文字另起一行（此前挤在按钮行里，把按钮压到换行）。
-              refreshNote ? React.createElement('div', { className: 'dshp-note', style: { marginTop: '4px' } }, refreshNote) : null,
-              React.createElement(
-                'pre',
-                { className: 'dshp-preview', style: { marginTop: '10px' } },
-                showCopy ? shownText : React.createElement('span', { style: { color: 'var(--dsw-alias-label-tertiary, #9aa0a6)' } }, previewEmptyHint),
-              ),
-              // 0.4.94：说明行在 <pre> **外面**（此前它是 <pre> 的子节点，极简
-              // 模板的预览因此多出第二行）。文字也砍到最短。
-              React.createElement(
-                'div',
-                { className: 'dshp-preview-meta', style: { marginTop: '6px' } },
-                shownFromBuiltin
-                  ? React.createElement('span', { className: 'dshp-tag' }, builtinViewEntry ? builtinViewEntry.label : '内置模板')
-                  : null,
-                builtinViewEntry
-                  ? React.createElement('button', { type: 'button', className: 'dshp-btn-sm', onClick: function () { setBuiltinView(null) } }, '返回')
-                  : null,
-                showCopy
-                  ? React.createElement(
-                      'span',
-                      { className: 'dshp-note' },
-                      (view === 'template' && varLegend.length > 0 ? varLegend.join(' · ') + ' · ' : '') + shownText.length + ' 字符',
-                    )
-                  : null,
-              ),
-              showCopy
-                ? React.createElement(
-                    'span',
-                    { className: 'dshp-note' },
-                    (view === 'template' && varLegend.length > 0 ? varLegend.join(' · ') + ' · ' : '') + shownText.length + ' 字符',
-                  )
-                : null,
-            ),
-          ),
-          // ------------------------------------------------------------ ③ 我的提示词
+          // ------------------------------------------------------------ ① 提示词模板
           React.createElement(
             'div',
             { className: 'dshp-section' },
@@ -1216,7 +1165,7 @@
               'div',
               { className: 'dshp-section-head' },
               React.createElement('div', { className: 'dshp-label' }, '提示词模板'),
-              React.createElement('div', { className: 'dshp-hint' }, '4 个内置模板 + 自定义模板'),
+              React.createElement('div', { className: 'dshp-hint' }, '内置默认 + 自定义模板'),
             ),
             React.createElement(
               'div',
@@ -1226,12 +1175,48 @@
                 'div',
                 { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'nowrap' } },
                 React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: !writable || busy, onClick: openNewEditor }, '＋ 新建'),
-                React.createElement('span', { className: 'dshp-note', style: { flex: '0 0 auto' } }, '模板'),
-                templateButtons,
               ),
             ),
             editorBlock,
           ),
+          // ------------------------------------------------------------ ② 内置模板查看
+          builtinViewEntry
+            ? React.createElement(
+                'div',
+                { className: 'dshp-section' },
+                React.createElement(
+                  'div',
+                  { className: 'dshp-section-head', style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                  React.createElement('div', { className: 'dshp-label' }, builtinViewEntry.label || builtinLabelOf(builtinView)),
+                  React.createElement('span', { className: 'dshp-tag' }, '内置模板'),
+                  React.createElement('span', { style: { flex: '1 1 auto' } }),
+                  React.createElement(
+                    'button',
+                    { type: 'button', className: 'dshp-btn', disabled: viewText.length === 0, onClick: function () { doCopy(viewText) } },
+                    copied ? '已复制' : '复制',
+                  ),
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'dshp-card' },
+                  React.createElement(
+                    'pre',
+                    { className: 'dshp-preview', style: { marginTop: '4px' } },
+                    viewText.length > 0 ? viewText : '未解析',
+                  ),
+                  React.createElement(
+                    'div',
+                    { className: 'dshp-preview-meta', style: { marginTop: '6px' } },
+                    React.createElement(
+                      'button',
+                      { type: 'button', className: 'dshp-btn', onClick: function () { setBuiltinView(null) } },
+                      '返回',
+                    ),
+                    viewText.length > 0 ? React.createElement('span', { className: 'dshp-note' }, viewText.length + ' 字符') : null,
+                  ),
+                ),
+              )
+            : null,
           statusNote ? React.createElement('div', { className: 'dshp-footer' }, React.createElement('span', { className: 'dshp-note' }, statusNote)) : null,
         )
       }
