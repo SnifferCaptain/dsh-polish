@@ -36,7 +36,7 @@ A collection of independently switchable enhancements for DeepSeek Harness (DSH)
 
 Built-in templates come directly from DSH preset definitions and do not require model probing. System prompts support append and full replacement. Because `minimal` has a complete default persona, full replacement intentionally takes over that persona.
 
-The Tool Prompts page reads the global `ctx.tools.schemas()` registry and keeps a stable snapshot. It never discovers tools from session model assembly, and background sessions cannot change the list while you edit. The snapshot is refreshed at plugin startup and only after an explicit refresh; a refresh is refused while unsaved tool-prompt edits exist.
+The Tool Prompts page reads the global registry and each declared Agent preset scope through a read-only Host route. Opening the Tool Prompts tab performs one read; afterward the catalog changes only when you explicitly refresh it. It never discovers tools from live session model assembly, and background sessions cannot change the list while you edit. Refresh is refused while unsaved tool-prompt edits exist. The catalog is a stable union of declared global/preset tools; live session-only restrictions are intentionally not part of this editable catalog.
 
 ### Session slimming
 

@@ -52,8 +52,8 @@ import z from '@deepseek-ai/schemastery'
  *   · append（默认）：原描述 + 空行 + 用户文本；replace：整份换掉原描述。
  *   · 每次装配实时读本行设置（与 section 文本同范式）——保存后下一次
  *     模型调用即生效，无需重启；空文本 = 该工具不改动（原样通过）。
- *   · 工具列表经 volatile 设置字段 toolPreview 传给客户端页面展示
- *     （name + 原始描述，单条截断 6000 字符）；volatile 不占表单。
+ *   · 工具提示页通过 Client fetch 路由读取 ctx.tools.schemas()
+ *     不依赖 session 探测，也不写入 volatile toolPreview。
  *
  * —— renderPrompt 的取用 ——
  *   预览用 dsh-system-prompt 导出的模块级函数 `renderPrompt` 渲染（与
@@ -128,29 +128,6 @@ export const Config = z.object({
   /** 工具提示模式（持久）：'append' = 追加到原描述末尾（默认，保留原
    *  功能说明）；'replace' = 整份替换原描述（模型只看到用户文本）。 */
   toolPromptMode: z.string().default('append').volatile(),
-  /** 0.4.67 手动刷新（客户端写入的运行期 nonce）：页面「刷新」按钮写一个
-   *  新的时间戳；宿主 1s 轮询发现变化后重新读取全局工具注册表。
-   *  这是唯一的工具目录刷新入口；提示词文本仍绕过 5 秒稳定性等待。默认 0。 */
-  refreshNonce: z.number().default(0).volatile(),
-  /** 运行时通道（volatile）：用户手动刷新得到的全局注册表快照（name +
-   *  **原始**描述，单条截断 6000 字符），供「工具提示」页展示。 */
-  toolPreview: z
-    .object({
-      tools: z
-        .array(
-          z.object({
-            name: z.string(),
-            description: z.string(),
-            lastSeen: z.number().default(0),
-            sessionId: z.string().default(''),
-            sessionTitle: z.string().default(''),
-          }),
-        )
-        .default([]),
-      updatedAt: z.number().default(0),
-    })
-    .default({})
-    .volatile(),
   /** 运行时通道（volatile）：水幕捕获的提示词两层结构（均不含工具 section）。
    *  effective/defaultText = 最终形态（非工具 section 的 renderPrompt 渲染）；
    *  effectiveTemplate/defaultTemplate = 模板层（同一批 section 原始 text，
@@ -198,9 +175,9 @@ export const Config = z.object({
     .volatile(),
 })
 
-// settings（轮询读 describe + 写回 update）、systemPrompt（section 注册 +
-// assemble 水幕）、timer（ctx.interval 轮询）、tools（稳定的全局工具目录）。
-export const inject = ['settings', 'systemPrompt', 'timer', 'agents', 'agentPresets', 'connection', 'tools']
+// settings（读写配置）、systemPrompt（section 注册 + assemble 水幕）、
+// tools（稳定的全局工具目录）和 connection（打开/手动刷新时的只读路由）。
+export const inject = ['settings', 'systemPrompt', 'agents', 'agentPresets', 'connection', 'tools']
 
 export function apply(ctx, config) {
   var enabled = !config || config.enabled !== false
@@ -681,55 +658,72 @@ export function apply(ctx, config) {
   var lastDefault = null
   var activeMode = ''
 
-  // 工具提示页使用全局注册表的显式快照；不会随模型装配或后台会话自动变动。
-  // 提示词文本仍使用 5s 稳定门控：首次捕获立即显示，候选内容需连续
+  // 提示词文本使用 5s 稳定门控：首次捕获立即显示，候选内容需连续
   // 观察满 5s 才替换预览，避免装配过程中的短暂中间态污染页面。
   var PROMPTS_STABLE_MS = 5000
   var previewCandidatePair = null // 候选文本对（effective + defaultText）
   var previewCandidateAt = 0
-  // 页面「刷新」通过 refreshNonce 通知宿主；宿主重新读取工具注册表。
-  var latestPreviewPatch = null
-  var lastSeenNonce = 0
-
-  /** 将全局 ToolSchema 转成一个稳定的手动快照并写入 volatile 通道。 */
-  function publishToolCatalog(rawTools) {
-    try {
-      if (!Array.isArray(rawTools)) return
-      var now = Date.now()
-      var seen = {}
-      var list = []
-      for (var t = 0; t < rawTools.length; t++) {
-        var tool = rawTools[t]
-        if (!tool || typeof tool.name !== 'string' || !tool.name || seen[tool.name]) continue
-        seen[tool.name] = true
-        list.push({
-          name: tool.name,
-          description: typeof tool.description === 'string' ? tool.description.slice(0, 6000) : '',
-          lastSeen: now,
-          sessionId: '',
-          sessionTitle: '',
-        })
-      }
-      list.sort(function (a, b) {
-        return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
-      })
-      stampWrite(ctx.settings.update(NS, { toolPreview: { tools: list, updatedAt: now } }), 'toolPreview(manual-catalog)')
-    } catch (error) {}
-  }
 
   /**
-   * 工具提示页只展示全局注册表的手动快照，不依赖任何 session 或模型装配。
-   * 动态/受限工具仍由真正的 assembly 送给模型，但不会在用户编辑时改动此页。
+   * Read a stable catalog without touching live Agents or sessions.
+   * The global layer contains external tools; DSH's built-in tools are declared
+   * inside preset scopes, so acquire each retained preset scope and union those
+   * declarations. This is a preset registry read, not session probing.
    */
-  function refreshToolCatalog() {
+  async function readToolCatalog() {
+    var raw = []
     try {
-      if (!ctx.tools || typeof ctx.tools.schemas !== 'function') return
-      var schemas = ctx.tools.schemas()
-      if (!Array.isArray(schemas)) return
-      publishToolCatalog(schemas)
+      if (ctx.tools && typeof ctx.tools.schemas === 'function') {
+        var globalSchemas = ctx.tools.schemas()
+        if (Array.isArray(globalSchemas)) raw = raw.concat(globalSchemas)
+      }
     } catch (error) {}
+    try {
+      if (ctx.agentPresets && typeof ctx.agentPresets.list === 'function' && typeof ctx.agentPresets.acquireScope === 'function') {
+        var presets = await withBuiltinTimeout(ctx.agentPresets.list(), [])
+        if (Array.isArray(presets)) {
+          for (var p = 0; p < presets.length; p++) {
+            var preset = presets[p]
+            var presetId = preset && typeof preset.id === 'string' ? preset.id : ''
+            if (!presetId) continue
+            var lease = null
+            try {
+              lease = await withBuiltinTimeout(ctx.agentPresets.acquireScope(presetId), null)
+              if (lease && lease.key && ctx.tools && typeof ctx.tools.schemas === 'function') {
+                var scopedSchemas = ctx.tools.schemas(lease.key)
+                if (Array.isArray(scopedSchemas)) raw = raw.concat(scopedSchemas)
+              }
+            } catch (error) {
+              // One broken preset must not hide the global or other preset tools.
+            } finally {
+              if (lease && typeof lease[Symbol.asyncDispose] === 'function') {
+                try {
+                  await lease[Symbol.asyncDispose]()
+                } catch (disposeError) {}
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {}
+    var seen = {}
+    var list = []
+    for (var i = 0; i < raw.length; i++) {
+      var tool = raw[i]
+      if (!tool || typeof tool.name !== 'string' || !tool.name || seen[tool.name]) continue
+      seen[tool.name] = true
+      list.push({
+        name: tool.name,
+        description: typeof tool.description === 'string' ? tool.description.slice(0, 6000) : '',
+      })
+    }
+    list.sort(function (a, b) {
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    })
+    return list
   }
 
+  /** Tool schemas are read through this explicit Host route; no session assembly is involved. */
   /** 工具相关 section 的判定：tool:*（每工具一段使用须知）、tools:*
    *  （sdk 总说明）、mcp-*（MCP 服务器）。这是提示词组件——工具相关内容
    *  不展示在任何预览视图里；它们的 JSON 定义走 assembly.tools 独立通道
@@ -861,8 +855,6 @@ export function apply(ctx, config) {
     try {
       vars = variableList(variables)
     } catch (error) {}
-    // 0.4.67：无条件记住最近一次捕获的提示词（供「刷新」立即采纳）。
-    latestPreviewPatch = buildPreviewPatch(effective, defaultText, effectiveTemplate, defaultTemplate, vars)
     var pair = effective + '\u001f' + defaultText
     if (effective === lastEffective && defaultText === lastDefault) {
       // 已入库文本被再次观察到 → 打断候选计数（否则 A/B 交替捕获会在中途被
@@ -908,30 +900,6 @@ export function apply(ctx, config) {
     }
   }
 
-  /** 手动刷新在下一个 macrotask 发布，避免 settings.update 的 HMR 事务嵌套。 */
-  var promoteTimer = 0
-  function promoteLatest() {
-    if (promoteTimer) return
-    promoteTimer = setTimeout(function () {
-      promoteTimer = 0
-      try {
-        // 刷新只重新读取稳定的全局工具注册表，不触碰正在编辑的文本。
-        refreshToolCatalog()
-        if (
-          latestPreviewPatch &&
-          (lastEffective === null ||
-            latestPreviewPatch.effective !== lastEffective ||
-            latestPreviewPatch.defaultText !== lastDefault)
-        ) {
-          lastEffective = latestPreviewPatch.effective
-          lastDefault = latestPreviewPatch.defaultText
-          previewCandidatePair = null
-          previewCandidateAt = 0
-          writePreview(latestPreviewPatch, lastPreviewPreset)
-        }
-      } catch (error) {}
-    }, 0)
-  }
   /** 0.4.45：按本行设置改写工具描述（fail-soft：任何异常原样放行）。
    *  每次装配实时读设置——客户端保存后下一次模型调用即生效。 */
   function rewriteToolDescriptions(assembly) {
@@ -1102,12 +1070,6 @@ export function apply(ctx, config) {
   }
 
   function syncSection() {
-    var rowValue = findValue()
-    var nonce = rowValue && typeof rowValue.refreshNonce === 'number' ? rowValue.refreshNonce : 0
-    if (nonce !== lastSeenNonce) {
-      lastSeenNonce = nonce
-      if (nonce !== 0) promoteLatest()
-    }
     syncAgentSections()
     scheduleBuiltinRefresh()
   }
@@ -1139,6 +1101,31 @@ export function apply(ctx, config) {
     'dsh-polish: prompts builtins route',
   )
 
+  ctx.effect(
+    function () {
+      if (!ctx.connection || !ctx.connection.fetch || typeof ctx.connection.fetch.register !== 'function') return
+      ctx.connection.fetch.register({
+        path: '/api/dshp/prompts/tools',
+        methods: ['GET'],
+        requestBody: 'buffered',
+        fetch: async function () {
+          try {
+            return new Response(JSON.stringify({ ok: true, tools: await readToolCatalog(), updatedAt: Date.now() }), {
+              status: 200,
+              headers: { 'content-type': 'application/json; charset=utf-8' },
+            })
+          } catch (error) {
+            return new Response(JSON.stringify({ ok: false, error: String((error && error.message) || error) }), {
+              status: 500,
+              headers: { 'content-type': 'application/json; charset=utf-8' },
+            })
+          }
+        },
+      })
+    },
+    'dsh-polish: prompts tools route',
+  )
+
   var stopCapture = null
   ctx.effect(
     function () {
@@ -1161,26 +1148,19 @@ export function apply(ctx, config) {
          })
        }
        syncSection()
-        // 只在插件启动时建立一次目录快照；之后只响应用户的明确刷新。
-        refreshToolCatalog()
+        // 
+        
       try {
         var builtinPromise = refreshBuiltins()
         if (builtinPromise && typeof builtinPromise.catch === 'function') builtinPromise.catch(function () {})
       } catch (error) {}
-      var interval = ctx.interval(syncSection, 1000)
+      
       return function () {
-        try {
-          interval.dispose()
-        } catch (error) {}
         try { if (typeof stopAgentCreated === 'function') stopAgentCreated() } catch (error) {}
         try { if (typeof stopAgentDisposed === 'function') stopAgentDisposed() } catch (error) {}
         try { if (typeof stopPresetSelected === 'function') stopPresetSelected() } catch (error) {}
         registeredByAgent.forEach(function (reg) { disposeRegistration(reg) })
         registeredByAgent.clear()
-        if (promoteTimer) {
-          try { clearTimeout(promoteTimer) } catch (error) {}
-          promoteTimer = 0
-        }
         if (stopCapture) {
           try {
             stopCapture()

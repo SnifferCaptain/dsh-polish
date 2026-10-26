@@ -180,11 +180,11 @@
         // 0.4.65：按本行 revision 门控重渲染（防止 mirror 全量通知时整页
         // 反复刷新）。0.4.78：门控从「revision 变化」升级为「本行值签名
         // 变化」——revision 由宿主的静态 entry options 驱动，volatile 写入
-        // （宿主水幕重写 preview/toolPreview）可能只更新值而不推进 revision，
+        // （宿主水幕重写 preview）可能只更新值而不推进 revision，
         // 纯 revision 门控会把这类更新永久吞掉（症状：工具列表一直为空、
-        // 刷新无效）。签名覆盖本页渲染依赖的全部字段；同时每 5s 主动
-        // mirror.load() 一次全量 describe——即使宿主→客户端的失效事件没到，
-        // 页面也在 5 秒内拿到最新文档。
+        // 刷新无效）。签名覆盖本页渲染依赖的全部字段。0.4.9x：去掉 5s 主动
+        // mirror.load() 轮询——mirror 订阅本身就是唯一更新路径，轮询只会
+        // 放大无谓的全量 describe。
         React.useEffect(
           function () {
             if (!mirror || typeof mirror.subscribe !== 'function') return undefined
@@ -196,7 +196,6 @@
                   if (ns[i] && ns[i].ns === NS_PROMPTS) {
                     var r = ns[i]
                     var v = r.value || {}
-                    var tp = v.toolPreview || {}
                     var pv = v.preview || {}
                     var tl = {}
                     if (v.toolPrompts && typeof v.toolPrompts === 'object') {
@@ -204,8 +203,8 @@
                     }
                     return [
                       r.revision,
-                      Array.isArray(tp.tools) ? tp.tools.length : 0,
-                      tp.updatedAt || 0,
+                      
+                      
                       typeof pv.effective === 'string' ? pv.effective.length : 0,
                       pv.updatedAt || 0,
                        JSON.stringify(v.previewByPreset || {}),
@@ -215,7 +214,7 @@
                        JSON.stringify(v.builtins || []),
                        v.active || '',
                       JSON.stringify(tl),
-                      v.refreshNonce || 0,
+                      
                       v.enabled === false ? 0 : 1,
                       
                     ].join('|')
@@ -236,66 +235,19 @@
               lastSig = sig
               bump()
             })
-            var timer = setInterval(function () {
-              try {
-                if (mirror.load) {
-                  var p = mirror.load()
-                  if (p && typeof p.catch === 'function') p.catch(function () {})
-                }
-              } catch (error) {}
-              var sig = rowSig()
-              if (sig !== lastSig) {
-                lastSig = sig
-                bump()
-              }
-            }, 5000)
-            return function () {
-              off()
-              clearInterval(timer)
-            }
-          },
-          [],
-        )
-
-        var [tab, setTab] = React.useState('effective')
-        // 0.4.40 视图层：template（模板，{{变量}} 原样保留）/ final（最终形态，
-        // 变量已代入）。这是提示词组件——工具相关内容（tool:*/tools:*/mcp-*
-        // section 与工具 JSON 定义）不展示在任何视图里。
-        var [view, setView] = React.useState('template')
-        var [editor, setEditor] = React.useState(null)
-        // 0.4.91：查看某个内置模板的真实内容（内容来自 DSH 的 preset 定义，
-        // 不需要任何一次模型调用）。
-        var [builtinView, setBuiltinView] = React.useState(null)
-        // 0.4.93：内置模板内容的第二条通道——宿主路由 /api/dshp/prompts/builtins
-        // （设置行之外的纯读通道；两条通道都拿不到时才显示「未解析」）。
-        var [remoteBuiltins, setRemoteBuiltins] = React.useState(null)
-        React.useEffect(
-          function () {
-            var stopped = false
-            function pull() {
-              try {
-                fetch('/api/dshp/prompts/builtins')
-                  .then(function (res) {
-                    return res && res.ok ? res.json() : null
-                  })
-                  .then(function (data) {
-                    if (stopped) return
-                    if (data && Array.isArray(data.builtins) && data.builtins.length > 0) setRemoteBuiltins(data.builtins)
-                  })
-                  .catch(function () {})
-              } catch (error) {}
-            }
-            pull()
-            var timer = setInterval(pull, 30000)
-            return function () {
-              stopped = true
-              clearInterval(timer)
-            }
+             // No interval polling: the settings mirror subscription is the only update path.
+             return function () {
+               off()
+             }
           },
           [],
         )
         var [saveStatus, setSaveStatus] = React.useState('')
         var [copied, setCopied] = React.useState(false)
+         var [tab, setTab] = React.useState('effective')
+         var [view, setView] = React.useState('template')
+         var [editor, setEditor] = React.useState(null)
+         var [builtinView, setBuiltinView] = React.useState(null)
         // 0.4.45 顶层标签：system（系统提示词，原有四段）/ tools（工具提示，
         // 改工具描述文本控制模型调用意愿）。drafts/mode 懒填充：初值取自
         // 行设置，用户编辑后本地优先（保存前不回读）。
@@ -303,10 +255,28 @@
          var [selectedPreset, setSelectedPreset] = React.useState('standard')
         var [toolDrafts, setToolDrafts] = React.useState(null)
         var [toolMode, setToolMode] = React.useState(null)
-        // 0.4.67：手动刷新提示。0.4.65 的稳定性门控让工具列表/预览不再自动
-        // 乱刷，代价是「最近一次捕获」要连续稳定 5 秒才自动采纳——页面加
-        // 「刷新」按钮：写一个 refreshNonce，宿主 1s 轮询发现变化后**立即**
-        // 采纳最近一次捕获（见 host prompts/index.js promoteLatest）。
+         var [toolCatalog, setToolCatalog] = React.useState(null)
+         var [toolCatalogUpdatedAt, setToolCatalogUpdatedAt] = React.useState(0)
+         var toolCatalogOpened = React.useRef(false)
+         var toolCatalogBusy = React.useRef(false)
+         var [remoteBuiltins, setRemoteBuiltins] = React.useState(null)
+         React.useEffect(
+           function () {
+             var stopped = false
+             fetch('/api/dshp/prompts/builtins')
+               .then(function (res) { return res && res.ok ? res.json() : null })
+               .then(function (data) {
+                 if (!stopped && data && Array.isArray(data.builtins) && data.builtins.length > 0) setRemoteBuiltins(data.builtins)
+               })
+               .catch(function () {})
+             return function () { stopped = true }
+           },
+           [],
+         )
+        // 工具目录不依赖 session，也不会自动刷新；
+        
+        // 页面打开时读取一次，之后只允许用户手动刷新
+        
         var [refreshNote, setRefreshNote] = React.useState('')
         var [refreshing, setRefreshing] = React.useState(false)
 
@@ -367,30 +337,45 @@
           )
         }
 
-        function requestRefresh() {
-          if (!form || refreshing) return
-          if (toolDirty) {
+        function loadToolCatalog(manual) {
+          if (toolCatalogBusy.current) return
+          if (manual && toolDirty) {
             setRefreshNote('有未保存的工具提示，请先保存后再刷新目录。')
             return
           }
+          toolCatalogBusy.current = true
           setRefreshing(true)
-          setRefreshNote('已请求，1 秒内生效。')
-          var cleared = false
-          var clearTimer = setTimeout(function () {
-            cleared = true
-            setRefreshNote('')
-            setRefreshing(false)
-          }, 6000)
-          Promise.resolve(form.mutate([{ op: 'set', path: ['refreshNonce'], value: Date.now() }])).then(
-            function (ok) {
-              if (!ok && !cleared) {
-                setRefreshNote('刷新请求被拒绝，请重试。')
-              }
-            },
-            function () {
-              if (!cleared) setRefreshNote('刷新请求被拒绝，请重试。')
-            },
-          )
+          setRefreshNote(manual ? '正在读取工具注册表…' : '')
+          fetch('/api/dshp/prompts/tools')
+            .then(function (res) {
+              return res && res.ok ? res.json() : null
+            })
+            .then(function (data) {
+              if (!data || data.ok !== true || !Array.isArray(data.tools)) throw new Error('tool catalog unavailable')
+              setToolCatalog(data.tools)
+              setToolCatalogUpdatedAt(typeof data.updatedAt === 'number' ? data.updatedAt : Date.now())
+              setRefreshNote(manual ? '工具目录已更新。' : '')
+            })
+            .catch(function () {
+              setRefreshNote('读取工具目录失败，请手动重试。')
+            })
+            .then(function () {
+              toolCatalogBusy.current = false
+              setRefreshing(false)
+            })
+        }
+
+        React.useEffect(
+          function () {
+            if (page !== 'tools' || toolCatalogOpened.current) return
+            toolCatalogOpened.current = true
+            loadToolCatalog(false)
+          },
+          [page],
+        )
+
+        function requestRefresh() {
+          loadToolCatalog(true)
         }
 
         function selectActive(id) {
@@ -854,8 +839,8 @@
         var statusNote = saveStatus === 'saved' ? '已保存，立即生效。' : saveStatus === 'failed' ? '保存被拒绝，请重试。' : null
 
         // ---------------------------------------------------- 0.4.45 工具提示页
-        // 数据通道：host 半从 ctx.tools.schemas() 建立全局工具目录快照，写入
-        // volatile toolPreview；用户文本存 toolPrompts（toolName -> 文本，持久），
+        // 数据通道：工具目录通过 Host fetch 路由从 ctx.tools.schemas() 读取快照，不写入
+        // settings；用户文本存 toolPrompts（toolName -> 文本，持久），
         // 模式存 toolPromptMode。只有用户明确点击刷新时才重新读取目录，
         // 编辑过程中列表不会因 session 探测或后台模型调用而变化。
         var savedToolPrompts = value.toolPrompts && typeof value.toolPrompts === 'object' ? value.toolPrompts : {}
@@ -867,7 +852,7 @@
           toolDrafts = d0
         }
         if (toolMode === null) toolMode = value.toolPromptMode === 'replace' ? 'replace' : 'append'
-        var toolList = value.toolPreview && Array.isArray(value.toolPreview.tools) ? value.toolPreview.tools : []
+        var toolList = Array.isArray(toolCatalog) ? toolCatalog : []
         function setToolDraft(name, text) {
           setToolDrafts(function (prev) {
             var next = {}
@@ -1029,20 +1014,20 @@
                 { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' } },
                 React.createElement(
                   'button',
-                  { type: 'button', className: 'dshp-btn', disabled: !writable || refreshing, onClick: requestRefresh },
+                  { type: 'button', className: 'dshp-btn', disabled: refreshing, onClick: requestRefresh },
                   refreshing ? '刷新中…' : '刷新工具列表',
                 ),
                 React.createElement(
                   'span',
                   { className: 'dshp-hint' },
-                  '全局工具注册表快照；只有手动刷新才更新',
+                  '全局与 preset 工具注册表快照；只有手动刷新才更新',
                 ),
                 refreshNote ? React.createElement('span', { className: 'dshp-note' }, refreshNote) : null,
-                value.toolPreview && value.toolPreview.updatedAt
+                toolCatalogUpdatedAt
                   ? React.createElement(
                       'span',
                       { className: 'dshp-note' },
-                      '（快照时间 ' + new Date(value.toolPreview.updatedAt).toLocaleTimeString() + '）',
+                      '（快照时间 ' + new Date(toolCatalogUpdatedAt).toLocaleTimeString() + '）',
                     )
                   : null,
                                 ),
@@ -1185,7 +1170,7 @@
                 React.createElement('button', { type: 'button', className: view === 'template' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setView('template') } }, '模板'),
                 React.createElement('button', { type: 'button', className: view === 'final' ? 'dshp-btn dshp-btn-primary' : 'dshp-btn', onClick: function () { setView('final') } }, '最终形态'),
                 React.createElement('span', { style: { flex: '1 1 auto' } }),
-                React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: !writable || refreshing, onClick: requestRefresh }, refreshing ? '刷新中…' : '刷新'),
+                React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: refreshing, onClick: requestRefresh }, refreshing ? '刷新中…' : '刷新'),
                 React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: !showCopy, onClick: doCopy }, copied ? '已复制' : '复制'),
               ),
               // 0.4.94：提示文字另起一行（此前挤在按钮行里，把按钮压到换行）。
