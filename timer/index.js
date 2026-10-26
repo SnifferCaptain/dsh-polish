@@ -49,10 +49,11 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
  *   export const inject = ['tools', ...]                   // 声明注入 tools，ctx.tools 才可用
  *   agent.ctx.tools.register(defineTool({ name, description, parameters,
  *                                         output: { schema, render }, execute }))  // output 必填
- * 到点注入对齐 @deepseek-ai/dsh-schedule：
+ * 到点注入对齐 @deepseek-ai/dsh-schedule（client 端去掉 flush 步：该服务
+ * 在 client 上下文的 ctx.sessions（ClientSessions）上不存在，消息由宿主
+ * 正常请求路径落盘）：
  *   sessionController.resolveAgent(sessionId)
  *     -> agent.followup(createUserMessage({ content, source }))
- *     -> sessions.flush(agent.session)
  */
 export const Config = z.object({
   /** 计时器总开关（镜像本行 Loader 行开关，在行激活时读取）。 */
@@ -78,10 +79,10 @@ export const Config = z.object({
 //   tools           （声明注入；按 agent 注册走 agent.ctx.tools，这里保留以兼容）
 //   timer           （ctx.interval 计时）
 //   sessionController（到点解析会话 agent）
-//   sessions        （落盘）
+// （0.4.98：sessions 注入已移除——client 版 ClientSessions 无 flush()，旧调用恒 TypeError）
 //   agents          （枚举/查活着的 agent：list() / get(id)）
 //   agentPresets    （读某 agent 当前预设 id：composedPreset(agent.ctx)）
-export const inject = ['settings', 'tools', 'timer', 'sessionController', 'sessions', 'agents', 'agentPresets']
+export const inject = ['settings', 'tools', 'timer', 'sessionController', 'agents', 'agentPresets']
 
 export function apply(ctx, config) {
   var enabled = !config || config.enabled !== false
@@ -138,7 +139,9 @@ export function apply(ctx, config) {
     return prefix + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
   }
 
-  // 到点：解析该会话的 agent → 把文本作为用户消息 followup 进去 → flush 落盘。
+  // 到点：解析该会话的 agent → 把文本作为用户消息 followup 进去（落盘走宿主
+  // 正常请求路径；client 端 ctx.sessions（ClientSessions）没有 flush()，旧
+  // 调用恒 TypeError 被 catch 吞掉误报「注入失败」）。
   // （会话若已关闭，resolveAgent 返回 { error }，静默跳过。）
   function fire(sessionId, text) {
     ctx.sessionController
@@ -154,7 +157,6 @@ export function apply(ctx, config) {
             source: { kind: 'dsh-polish-timer' },
           }),
         )
-        return ctx.sessions.flush(resolved.agent.session)
       })
       .catch(function (error) {
         console.warn('[dshp timer] 注入失败：' + (error && error.message ? error.message : String(error)))
