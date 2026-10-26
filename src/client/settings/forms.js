@@ -43,6 +43,46 @@
       }
     }
 
+    /**
+     * Live-status strip: a row of "dot + label + value" items. The dot colour
+     * carries the verdict (ok / warn / err / idle), so the strip reads at a
+     * glance instead of as a sentence.
+     */
+    function statusStrip(items) {
+      if (!items || items.length === 0) return null
+      return React.createElement(
+        'div',
+        { className: 'dshp-status' },
+        items.map(function (item, i) {
+          return React.createElement(
+            'span',
+            { className: 'dshp-stat', key: i },
+            React.createElement('i', { className: 'dshp-dot', 'data-tone': item.tone || 'idle', 'data-pulse': item.pulse ? '1' : undefined }),
+            item.label,
+            item.value === undefined || item.value === '' ? null : React.createElement('b', null, String(item.value)),
+          )
+        }),
+      )
+    }
+
+    /** A tinted block with a coloured left rail: one title line, one sentence. */
+    function callout(tone, title, text) {
+      return React.createElement(
+        'div',
+        { className: 'dshp-callout', 'data-tone': tone },
+        React.createElement('b', null, title),
+        text ? React.createElement('span', null, text) : null,
+      )
+    }
+
+    /** CSS gradient of a depth palette, for the colour-scale swatches. */
+    function paletteGradient(paletteId) {
+      var ramp = DEPTH_PALETTES[paletteId] === undefined ? DEPTH_PALETTES['blue-purple'] : DEPTH_PALETTES[paletteId]
+      var stops = []
+      for (var i = 0; i < ramp.length; i++) stops.push(hexOf(ramp[i]))
+      return 'linear-gradient(90deg, ' + stops.join(', ') + ')'
+    }
+
     function SettingsForm(props) {
       var form = props.form
       var fields = props.fields
@@ -126,6 +166,7 @@
               type: 'button',
               role: 'switch',
               'aria-checked': checked ? 'true' : 'false',
+              'aria-label': field.label,
               className: 'dshp-switch',
               disabled: !writable,
               onClick: function () {
@@ -133,6 +174,33 @@
               },
             },
             React.createElement('span', { className: 'dshp-knob' }),
+          )
+        }
+        if (field.kind === 'swatch') {
+          var current = String(draft[field.key] === undefined ? field.fallback : draft[field.key])
+          return React.createElement(
+            'div',
+            { className: 'dshp-swatches', role: 'radiogroup', 'aria-label': field.label },
+            field.options.map(function (option) {
+              var on = option.value === current
+              return React.createElement(
+                'button',
+                {
+                  key: option.value,
+                  type: 'button',
+                  role: 'radio',
+                  'aria-checked': on ? 'true' : 'false',
+                  className: 'dshp-swatch',
+                  title: option.label,
+                  disabled: !writable,
+                  onClick: function () {
+                    setValue(field.key, option.value)
+                  },
+                },
+                React.createElement('i', { style: { background: paletteGradient(option.value) } }),
+                option.short || option.label,
+              )
+            }),
           )
         }
         if (field.kind === 'select') {
@@ -157,6 +225,7 @@
           min: field.min,
           max: field.max,
           step: field.step === undefined ? 1 : field.step,
+          'aria-label': field.label,
           value: draft[field.key] === undefined || draft[field.key] === '' ? '' : String(draft[field.key]),
           disabled: !writable,
           onChange: function (event) {
@@ -165,9 +234,23 @@
         })
       }
 
+      // Rows sit in one list with hairline dividers; a field's optional
+      // `group` opens a small heading so related switches read as a block.
       var rows = []
+      var lastGroup = null
       for (var m = 0; m < fields.length; m++) {
         var f = fields[m]
+        if (f.group && f.group !== lastGroup) {
+          lastGroup = f.group
+          rows.push(
+            React.createElement(
+              'div',
+              { className: 'dshp-gh', key: 'g:' + f.group },
+              f.group,
+              f.groupHint ? React.createElement('span', null, f.groupHint) : null,
+            ),
+          )
+        }
         var isOverridden = model.snapshot.user && model.snapshot.user[f.key] !== undefined
         rows.push(
           React.createElement(
@@ -180,7 +263,7 @@
                 'div',
                 { className: 'dshp-label' },
                 f.label,
-                isOverridden ? React.createElement('span', { className: 'dshp-tag' }, '已覆盖') : null,
+                isOverridden ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'accent', title: '已偏离默认值' }, '已覆盖') : null,
               ),
               f.hint ? React.createElement('div', { className: 'dshp-hint' }, f.hint) : null,
             ),
@@ -189,35 +272,54 @@
         )
       }
 
-      var note = null
-      if (!writable) note = '此部署的设置为只读。'
-      else if (model.status === 'saved') note = '已保存，立即生效。'
-      else if (model.status === 'failed') note = '保存被拒绝，请重试。'
-
-      rows.push(
-        React.createElement(
+      // The save bar exists only when there is something to say or do: unsaved
+      // edits, saved/failed feedback, or overridden values that can be reset.
+      var message = null
+      var tone = 'idle'
+      if (!writable) message = '此部署的设置为只读。'
+      else if (dirty.length > 0) {
+        message = '有未保存的更改'
+        tone = 'warn'
+      } else if (model.status === 'saved') {
+        message = '已保存，立即生效'
+        tone = 'ok'
+      } else if (model.status === 'failed') {
+        message = '保存被拒绝，请重试'
+        tone = 'err'
+      } else if (overridden.length > 0) message = '已自定义 ' + overridden.length + ' 项'
+      var bar = null
+      if (message !== null || overridden.length > 0) {
+        bar = React.createElement(
           'div',
-          { className: 'dshp-footer', key: '__footer' },
-          React.createElement(
-            'button',
-            {
-              type: 'button',
-              className: 'dshp-btn dshp-btn-primary',
-              disabled: !writable || busy || dirty.length === 0,
-              onClick: save,
-            },
-            busy ? '保存中…' : '保存',
-          ),
-          React.createElement(
-            'button',
-            { type: 'button', className: 'dshp-btn', disabled: !writable || busy || overridden.length === 0, onClick: resetAll },
-            '恢复默认',
-          ),
-          note === null ? null : React.createElement('span', { className: 'dshp-note' }, note),
-        ),
-      )
+          { className: 'dshp-savebar', key: '__footer' },
+          React.createElement('i', { className: 'dshp-dot', 'data-tone': tone }),
+          React.createElement('span', null, message),
+          React.createElement('span', { className: 'dshp-spacer' }),
+          overridden.length > 0
+            ? React.createElement(
+                'button',
+                { type: 'button', className: 'dshp-btn dshp-btn-ghost', disabled: !writable || busy, onClick: resetAll },
+                '恢复默认',
+              )
+            : null,
+          dirty.length > 0
+            ? React.createElement(
+                'button',
+                { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: !writable || busy, onClick: save },
+                busy ? '保存中…' : '保存',
+              )
+            : null,
+        )
+      }
 
-      return React.createElement('div', { className: 'dshp-form' }, rows)
+      return React.createElement(
+        'div',
+        { className: 'dshp-form' },
+        props.before || null,
+        React.createElement('div', { className: 'dshp-list' }, rows),
+        props.after || null,
+        bar,
+      )
     }
 
     function coerceRenderer(field, value) {
@@ -241,17 +343,35 @@
       {
         key: 'lines',
         kind: 'number',
+        group: '预览窗口',
         label: '预览行数',
-        hint: '思考进行中时正文最多显示几行，可上下滚动查看更早的内容。',
+        hint: '思考进行中最多显示几行，可上下滚动。',
         min: 1,
         max: 20,
         fallback: RENDERER_DEFAULTS.lines,
       },
       {
+        key: 'autoOpen',
+        kind: 'boolean',
+        group: '预览窗口',
+        label: '自动展开思考过程',
+        hint: '思考时自动展开；你手动点过之后不再干预。',
+        fallback: RENDERER_DEFAULTS.autoOpen,
+      },
+      {
+        key: 'showTime',
+        kind: 'boolean',
+        group: '预览窗口',
+        label: '显示思考时间',
+        hint: '展开时在标题行右侧显示已用秒数。',
+        fallback: RENDERER_DEFAULTS.showTime,
+      },
+      {
         key: 'followMs',
         kind: 'number',
+        group: '动画',
         label: '跟随时长（毫秒）',
-        hint: '换行/新增内容时，预览窗口滑到最新行所花的时间：0 = 即时跳底（旧行为），数值越大越柔（拖尾越长）。动画由实时时钟驱动，与流式帧率无关。',
+        hint: '预览滑到最新行所花的时间，0 = 即时。',
         min: 0,
         max: 2000,
         step: 50,
@@ -260,26 +380,13 @@
       {
         key: 'collapseMs',
         kind: 'number',
+        group: '动画',
         label: '收起动画（毫秒）',
-        hint: '思考结束后自动折叠的过渡时长，0 表示立即收起。',
+        hint: '思考结束后折叠的过渡时长，0 = 立即。',
         min: 0,
         max: 2000,
         step: 10,
         fallback: RENDERER_DEFAULTS.collapseMs,
-      },
-      {
-        key: 'autoOpen',
-        kind: 'boolean',
-        label: '自动展开思考过程',
-        hint: '思考进行中自动展开该行；你手动点过之后，本组件不再干预这一行。',
-        fallback: RENDERER_DEFAULTS.autoOpen,
-      },
-      {
-        key: 'showTime',
-        kind: 'boolean',
-        label: '显示思考时间',
-        hint: '思考进行中、预览展开时在「思考过程」标题行右侧显示已用秒数（等宽数字，增长不跳动）；折叠后不显示。',
-        fallback: RENDERER_DEFAULTS.showTime,
       },
     ]
 
@@ -288,27 +395,27 @@
         key: 'showInComposer',
         kind: 'boolean',
         label: '把「推理等级」改成滑动条',
-        hint: '打开模型面板时，把面板里那一行「推理等级」从档位列表改成滑条。关掉后该行恢复原样。',
+        hint: '模型面板里的档位列表换成滑条；关闭后恢复原样。',
         fallback: DEPTH_DEFAULTS.showInComposer,
-      },
-      {
-        key: 'palette',
-        kind: 'select',
-        label: '色阶',
-        hint: '滑条配色，按模型声明的档位数插值。',
-        options: [
-          { value: 'blue-purple', label: '浅蓝 → 深蓝 → 紫' },
-          { value: 'brand', label: '品牌蓝（浅 → 深）' },
-          { value: 'mono', label: '单色灰阶' },
-        ],
-        fallback: DEPTH_DEFAULTS.palette,
       },
       {
         key: 'labels',
         kind: 'boolean',
         label: '显示档位名称',
-        hint: '在该行右侧保留当前档位名（如“High”）。',
+        hint: '在滑条右侧保留当前档位名（如 High）。',
         fallback: DEPTH_DEFAULTS.labels,
+      },
+      {
+        key: 'palette',
+        kind: 'swatch',
+        label: '色阶',
+        hint: '按模型声明的档位数插值。',
+        options: [
+          { value: 'blue-purple', label: '浅蓝 → 深蓝 → 紫', short: '蓝紫' },
+          { value: 'brand', label: '品牌蓝（浅 → 深）', short: '品牌蓝' },
+          { value: 'mono', label: '单色灰阶', short: '灰阶' },
+        ],
+        fallback: DEPTH_DEFAULTS.palette,
       },
     ]
 
@@ -317,7 +424,7 @@
         key: 'enabled',
         kind: 'boolean',
         label: '启用上箭头召回历史',
-        hint: '输入框为空时按 ↑ 把本会话最近一条用户消息填进来；召回态里 ↑/↓ 翻历史，一旦改动即退出（变普通草稿），Esc 清空，Enter 照旧发送。',
+        hint: '输入框为空时按 ↑ 召回最近的用户消息；↑/↓ 翻历史，Esc 清空。',
         fallback: HISTORY_DEFAULTS.enabled,
       },
     ]
@@ -366,7 +473,18 @@
           }),
         )
       }
-      return React.createElement(SettingsForm, { form: form, fields: DEPTH_FIELDS, coerce: coerceDepth })
+      var depthStats = patcherStatsStore.get()
+      var depthItems
+      if (depthStats.panels > 0) {
+        depthItems = [
+          { label: '面板', value: depthStats.panels, tone: 'ok' },
+          { label: '滑条', value: depthStats.claimed, tone: depthStats.claimed > 0 ? 'ok' : 'warn' },
+        ]
+        if (depthStats.skip !== '' && SKIP_TEXT[depthStats.skip] !== undefined) depthItems.push({ label: '跳过', value: SKIP_TEXT[depthStats.skip], tone: 'warn' })
+      } else {
+        depthItems = [{ label: describePatcher(form && form.state ? form.state.value || {} : {}), tone: 'idle' }]
+      }
+      return React.createElement(SettingsForm, { form: form, fields: DEPTH_FIELDS, coerce: coerceDepth, after: statusStrip(depthItems) })
     }
 
     /**
@@ -393,19 +511,15 @@
           return describeHistory(value)
         }))
       }
-      // The full settings page also shows the live status line (the recall
-      // engine's health), so the user can see at a glance whether the anchor
-      // mounted and whether the last ↑ found history.
-      return React.createElement(
-        'div',
-        null,
-        React.createElement(SettingsForm, { form: form, fields: HISTORY_FIELDS, coerce: coerceHistory }),
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginTop: '10px' } },
-          form && form.state ? describeHistory(form.state.value || {}) : '状态加载中…',
-        ),
-      )
+      var hs = historyStatsStore.get()
+      var items
+      if (hs.sessions <= 0) items = [{ label: '等待会话占位', tone: 'idle' }]
+      else {
+        items = [{ label: '会话', value: hs.sessions, tone: 'ok' }]
+        if (hs.lastError) items.push({ label: '错误', value: hs.lastError, tone: 'err' })
+        else items.push(hs.lastCount > 0 ? { label: '已读', value: hs.lastCount + ' 条用户消息', tone: 'ok' } : { label: '等待 ↑', tone: 'idle' })
+      }
+      return React.createElement(SettingsForm, { form: form, fields: HISTORY_FIELDS, coerce: coerceHistory, after: statusStrip(items) })
     }
 
     /** The summary's health line: what the recall engine currently sees. */
@@ -427,14 +541,14 @@
         key: 'enabled',
         kind: 'boolean',
         label: '按最近使用排序工作区',
-        hint: '把「按项目分组」列表按每个工作区所含会话的最近更新时间重排——最近用的分组置顶，同时保留分组。关闭后不再自动重排（保持当前顺序）。',
+        hint: '最近用过的分组置顶，分组本身保留。',
         fallback: LRU_DEFAULTS.enabled,
       },
       {
         key: 'subagent',
         kind: 'boolean',
-        label: '按最近使用排序子智能体列表',
-        hint: '把会话头部的子智能体目录按各子会话最近活动时间重排——最近用的子智能体置顶。只在打开列表的那一刻排序，关闭期间不做任何后台处理。独立开关：上面的工作区重排关闭时它仍可单独开启；关闭后保持 DSH 默认的创建时间顺序。',
+        label: '按最近使用排序子智能体',
+        hint: '打开列表时按最近活动重排；与上一项互相独立。',
         fallback: LRU_DEFAULTS.subagent,
       },
     ]
@@ -469,16 +583,17 @@
           return describeLru(value)
         }))
       }
-      return React.createElement(
-        'div',
-        null,
-        React.createElement(SettingsForm, { form: form, fields: LRU_FIELDS, coerce: coerceLru }),
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginTop: '10px' } },
-          form && form.state ? describeLru(form.state.value || {}) : '状态加载中…',
-        ),
-      )
+      var ls = lruStatsStore.get()
+      var items
+      if (ls.error) items = [{ label: '错误', value: ls.error, tone: 'err' }]
+      else if (ls.workspaces > 0) {
+        items = [
+          { label: '工作区', value: ls.workspaces, tone: 'ok' },
+          { label: '最近重排', value: ls.lastMove || '待命', tone: ls.lastMove ? 'ok' : 'idle' },
+        ]
+        if (ls.subagents > 0) items.push({ label: '子智能体', value: '重排 ' + ls.subagents + ' 个目录', tone: 'ok' })
+      } else items = [{ label: '等待工作区列表', tone: 'idle' }]
+      return React.createElement(SettingsForm, { form: form, fields: LRU_FIELDS, coerce: coerceLru, after: statusStrip(items) })
     }
 
     var SHELL_LOCAL_FIELDS = [
@@ -486,7 +601,7 @@
         key: 'enabled',
         kind: 'boolean',
         label: '启用 opencode 模式（shell 绕过 OS 沙箱）',
-        hint: '开启后 pwsh 命令（含其派生的 python/node/git）不再经 OS 级沙箱包装，以 harness 进程的文件权限直接运行；文件工具层（write/edit）的 workspace 围界不受影响。关闭后即时恢复系统沙箱，无需重启。总开关是本行的行开关（默认关）。',
+        hint: 'pwsh 命令（含 python / node / git）不再经 OS 沙箱，以 harness 进程权限直接运行；write / edit 的围界不变。关闭即时恢复，无需重启。',
         fallback: SHELL_LOCAL_DEFAULTS.enabled,
       },
     ]
@@ -509,16 +624,18 @@
           return describeShellLocal(value)
         }))
       }
-      return React.createElement(
-        'div',
-        null,
-        React.createElement(SettingsForm, { form: form, fields: SHELL_LOCAL_FIELDS, coerce: coerceShellLocal }),
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginTop: '10px' } },
-          form && form.state ? describeShellLocal(form.state.value || {}) : '状态加载中…',
-        ),
-      )
+      var shellOn = !(form && form.state && form.state.value) || form.state.value.enabled !== false
+      return React.createElement(SettingsForm, {
+        form: form,
+        fields: SHELL_LOCAL_FIELDS,
+        coerce: coerceShellLocal,
+        after: statusStrip([
+          shellOn
+            ? { label: 'shell', value: '绕过 OS 沙箱', tone: 'warn' }
+            : { label: 'shell', value: '系统沙箱', tone: 'ok' },
+          { label: '文件工具围界', value: '不变', tone: 'ok' },
+        ]),
+      })
     }
 
     var VISUALIZE_FIELDS = [
@@ -526,14 +643,14 @@
         key: 'svg',
         kind: 'boolean',
         label: '渲染 SVG 代码块',
-        hint: '聊天里以 <svg 开头的 ```svg 围栏：严格消毒后以 <img> 静态光栅化展示（不执行任何脚本），块头有 代码/图示 切换。关闭后这些块保持普通代码块。',
+        hint: '严格消毒后以静态图片展示，不执行脚本；块头可在 代码 / 图示 间切换。',
         fallback: VISUALIZE_DEFAULTS.svg,
       },
       {
         key: 'mermaid',
         kind: 'boolean',
         label: '渲染 Mermaid 代码块',
-        hint: '聊天里的 ```mermaid 围栏（flowchart/sequenceDiagram/…）：首次见到才懒加载内置 mermaid 11.17.0（无 CDN），串行队列空闲期渲染，strict 安全模式。关闭后这些块保持普通代码块。',
+        hint: '首次出现时才懒加载内置 mermaid 11.17.0（无 CDN），strict 安全模式。',
         fallback: VISUALIZE_DEFAULTS.mermaid,
       },
     ]
@@ -569,16 +686,15 @@
           return describeVisualize(value)
         }))
       }
-      return React.createElement(
-        'div',
-        null,
-        React.createElement(SettingsForm, { form: form, fields: VISUALIZE_FIELDS, coerce: coerceVisualize }),
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginTop: '10px' } },
-          form && form.state ? describeVisualize(form.state.value || {}) : '状态加载中…',
-        ),
-      )
+      var vs = visualizeStatsStore.get()
+      var runtimeText = { ready: '就绪', loading: '加载中', failed: '加载失败' }[vs.mermaidState] || '未加载'
+      var runtimeTone = { ready: 'ok', loading: 'warn', failed: 'err' }[vs.mermaidState] || 'idle'
+      var visItems = [
+        { label: 'Mermaid 运行时', value: runtimeText, tone: runtimeTone, pulse: vs.mermaidState === 'loading' },
+        { label: '已渲染', value: 'svg ' + vs.svg + ' · mermaid ' + vs.mermaid, tone: vs.svg + vs.mermaid > 0 ? 'ok' : 'idle' },
+      ]
+      if (vs.errors > 0) visItems.push({ label: '失败', value: vs.errors, tone: 'err' })
+      return React.createElement(SettingsForm, { form: form, fields: VISUALIZE_FIELDS, coerce: coerceVisualize, after: statusStrip(visItems) })
     }
 
     /**
@@ -586,19 +702,15 @@
      * 本组件功能且更强），在 timer 设置页顶部展示；本行默认 disabled: true。
      */
     var TIMER_OFFICIAL_NOTE =
-      'DSH 现已内建官方「自动化任务」（dsh-schedule）：schedule_create / schedule_list / ' +
-      'schedule_update / schedule_delete 工具 + 侧栏「自动化任务」页面（搜索 / 筛选 / 编辑 / ' +
-      '任务运行记录 / 删除 / 打开原会话），支持一次性 / 每 N 秒 / 每天 / 每周 / cron，跨重启持久、' +
-      '补发最近一次错过，投递回原会话，任务所在会话行首也有时钟标记。' +
-      '本计时器组件（内存倒计时、重启即清）的功能已被其完整覆盖，故默认停用。' +
-      '如需恢复旧行为：打开「dsh-polish:timer」行开关，并启用下方「启用计时器」。'
+      'dsh-schedule 支持一次性 / 每 N 秒 / 每天 / 每周 / cron，跨重启持久，并能投递回原会话。' +
+      '本计时器组件（内存倒计时，重启即清）已被它完整覆盖，故默认停用；需要旧行为时，同时打开行开关与下方开关。'
 
     var TIMER_FIELDS = [
       {
         key: 'enabled',
         kind: 'boolean',
         label: '启用计时器（模型工具）',
-        hint: '本组件默认停用（官方「自动化任务」已覆盖，见上方说明）。开启后模型可用 timer_set / timer_cancel 定时提醒：N 分钟后把消息注入本会话、触发一轮处理。总开关以本行行开关为准。',
+        hint: '开启后模型可用 timer_set / timer_cancel 定时提醒；总开关以本行的行开关为准。',
         fallback: TIMER_DEFAULTS.enabled,
       },
     ]
@@ -620,50 +732,47 @@
           return describeTimer(value)
         }))
       }
-      return React.createElement(
-        'div',
-        null,
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginBottom: '10px' } },
-          TIMER_OFFICIAL_NOTE,
-        ),
-        React.createElement(SettingsForm, { form: form, fields: TIMER_FIELDS, coerce: coerceTimer }),
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginTop: '10px' } },
-          form && form.state ? describeTimer(form.state.value || {}) : '状态加载中…',
-        ),
-      )
+      return React.createElement(SettingsForm, {
+        form: form,
+        fields: TIMER_FIELDS,
+        coerce: coerceTimer,
+        before: callout('accent', '官方已内建「自动化任务」', TIMER_OFFICIAL_NOTE),
+      })
     }
 
     var NOTIFY_FIELDS = [
       {
         key: 'completeSound',
         kind: 'boolean',
-        label: '任务完成 · 提示音',
-        hint: '当前会话一轮处理完成（turn 以 completed 结束）时播放一段提示音。',
+        group: '任务完成',
+        groupHint: '一轮处理结束时',
+        label: '提示音',
+        hint: '播放一段提示音。',
         fallback: NOTIFY_DEFAULTS.completeSound,
       },
       {
         key: 'completeNotify',
         kind: 'boolean',
-        label: '任务完成 · 系统通知',
-        hint: '任务完成时弹一条系统通知（OS 级，非界面浮层）。需先在下方点『测试』授权系统通知权限。',
+        group: '任务完成',
+        label: '系统通知',
+        hint: '弹出 OS 级通知，需先授权（见下方测试）。',
         fallback: NOTIFY_DEFAULTS.completeNotify,
       },
       {
         key: 'attentionSound',
         kind: 'boolean',
-        label: '需要处理 · 提示音',
-        hint: '模型在等你时（审批 / 计划确认 / 提问）播放提示音。',
+        group: '需要处理',
+        groupHint: '审批、计划确认、提问时',
+        label: '提示音',
+        hint: '模型在等你时播放提示音。',
         fallback: NOTIFY_DEFAULTS.attentionSound,
       },
       {
         key: 'attentionNotify',
         kind: 'boolean',
-        label: '需要处理 · 系统通知',
-        hint: '模型在等你时（审批 / 计划确认 / 提问）弹一条系统通知。',
+        group: '需要处理',
+        label: '系统通知',
+        hint: '模型在等你时弹出 OS 级通知。',
         fallback: NOTIFY_DEFAULTS.attentionNotify,
       },
     ]
@@ -704,27 +813,40 @@
         }))
       }
       var stats = notifyStatsStore.get()
+      var perm = stats.permission
+      var permItem =
+        perm === 'granted'
+          ? { label: '系统通知权限', value: '已授权', tone: 'ok' }
+          : perm === 'denied'
+            ? { label: '系统通知权限', value: '被拒绝', tone: 'err' }
+            : perm === 'unsupported'
+              ? { label: '系统通知权限', value: '不支持', tone: 'idle' }
+              : { label: '系统通知权限', value: '未询问', tone: 'idle' }
+      var items = [permItem]
+      if (stats.lastComplete) items.push({ label: '最近完成', value: stats.lastComplete, tone: 'ok' })
+      if (stats.lastAttention) items.push({ label: '最近待处理', value: stats.lastAttention + '（' + attentionLabel(stats.lastAttentionKind) + '）', tone: 'warn' })
+      if (stats.lastTest) items.push({ label: '最近测试', value: stats.lastTest, tone: 'idle' })
+      if (stats.error) items.push({ label: '错误', value: stats.error, tone: 'err' })
       var permHint =
-        stats.permission === 'denied'
-          ? '系统通知权限被拒绝：请到浏览器/系统设置里允许本站通知，『通知』类开关才会真正弹出。'
-          : stats.permission === 'granted'
-            ? '系统通知已授权，开启『通知』类开关后即可弹出。'
-            : '提示音无需权限；系统通知需先点下方『测试』授权一次。'
-      return React.createElement(
-        'div',
-        null,
-        React.createElement(SettingsForm, { form: form, fields: NOTIFY_FIELDS, coerce: coerceNotify }),
-        React.createElement(
-          'div',
-          { className: 'dshp-note', style: { marginTop: '10px' } },
-          form && form.state ? describeNotify(form.state.value || {}) : '状态加载中…',
+        perm === 'denied'
+          ? '权限被拒绝：请到浏览器 / 系统设置里允许本站通知。'
+          : perm === 'granted'
+            ? '已授权，开启「系统通知」开关即可弹出。'
+            : '提示音无需权限；系统通知需先点「测试」授权一次。'
+      return React.createElement(SettingsForm, {
+        form: form,
+        fields: NOTIFY_FIELDS,
+        coerce: coerceNotify,
+        after: React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(
+            'div',
+            { className: 'dshp-footer' },
+            React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: testNotify }, '测试提示音 + 通知'),
+            React.createElement('span', { className: 'dshp-note' }, permHint),
+          ),
+          statusStrip(items),
         ),
-        React.createElement(
-          'div',
-          { className: 'dshp-footer', style: { marginTop: '8px' } },
-          React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: testNotify }, '测试提示音 + 通知'),
-          React.createElement('span', { className: 'dshp-note' }, permHint),
-        ),
-      )
+      })
     }
-

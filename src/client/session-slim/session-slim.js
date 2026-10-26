@@ -628,115 +628,128 @@
            if (qualifies(r)) eligibleIds.push(r.id)
          }
 
-        // ---- 行渲染 ----
-        var headerCells = ['项目', '会话名称', '事件数', '大小', '子代理', '上下文', '默认模型', '状态', '进行中', '瘦身']
+        // ---- 行渲染（1.2.0）：7 列；事件数/上下文用细条量化，状态用圆点 ----
+        // 事件数细条 = 相对筛选阈值（满条 + 强调色 = 命中）；上下文细条 = 占窗口比例
+        // （>=70% 黄、>=100% 红）。状态列取代原「状态 + 进行中」两列。
+        function slimMeter(tone, pct) {
+          return React.createElement('div', { className: 'dshp-meter', 'data-tone': tone }, React.createElement('i', { style: { width: Math.max(0, Math.min(100, pct)) + '%' } }))
+        }
         var tableHead = React.createElement(
           'tr',
           null,
-          headerCells.map(function (label, i) {
-            return React.createElement(
-              'th',
-              {
-                key: i,
-                style: {
-                  textAlign: i >= 2 && i <= 5 ? 'right' : 'left',
-                  padding: '6px 10px',
-                  borderBottom: '1px solid var(--dsw-alias-border-secondary, #2a2f3a)',
-                  color: 'var(--dsw-alias-label-secondary, #9aa0a6)',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                },
-                title: label === '事件数'
-                  ? '主会话 + 子代理合计'
-                  : label === '大小'
-                    ? 'zstd 原始文件大小'
-                    : label === '子代理'
-                       ? '折叠进当前主会话的子代理数量；事件数和大小已包含整棵会话树'
-                       : label === '默认模型'
-                      ? '未指定 compact 模型时用这个'
-                      : undefined,
-              },
-              label,
-            )
+          [
+            ['会话', false, undefined],
+            ['事件', true, '主会话 + 子代理合计；细条 = 相对筛选阈值，满条 = 命中'],
+            ['上下文', true, '当前上下文 / 模型窗口；细条 = 占用比例'],
+            ['默认模型', false, '未指定 compact 模型时用这个'],
+            ['状态', false, undefined],
+            ['', true, undefined],
+          ].map(function (col, i) {
+            return React.createElement('th', { key: i, 'data-r': col[1] ? '1' : undefined, title: col[2] }, col[0])
           }),
         )
-        var bodyRows = visible.map(function (row, i) {
+        var bodyRows = visible.map(function (row) {
           var hot = qualifies(row)
           var inQueue = queue.some(function (q) {
             return q && q.sessionId === row.id
           })
           var isCurrent = !!(currentJob && currentJob.sessionId === row.id)
-           var isPending = !!slimPendingIds[row.id]
-           var cellStyle = {
-            padding: '6px 10px',
-            borderBottom: '1px solid var(--dsw-alias-border-tertiary, #1f242e)',
-            fontSize: '13px',
-          }
+          var isPending = !!slimPendingIds[row.id]
           var nameTitle = (row.cwd ? row.cwd + ' — ' : '') + (row.title || row.id)
           var buttonLabel = isPending ? '提交中…' : inQueue ? '已入队' : isCurrent || row.running ? '处理中…' : '瘦身'
           var buttonDisabled = row.running || inQueue || isCurrent || isPending
+          var ctxPct = typeof row.ctxTokens === 'number' && typeof row.ctxWindow === 'number' && row.ctxWindow > 0 ? (row.ctxTokens / row.ctxWindow) * 100 : null
+          var ctxTone = ctxPct === null ? 'idle' : ctxPct >= 100 ? 'err' : ctxPct >= 70 ? 'warn' : 'ok'
+          var st = isCurrent
+            ? { tone: 'warn', text: '处理中', pulse: true }
+            : row.running
+              ? { tone: 'warn', text: slimRowStateLabel(row), pulse: true }
+              : inQueue
+                ? { tone: 'accent', text: '已入队' }
+                : isPending
+                  ? { tone: 'accent', text: '提交中' }
+                  : row.archived
+                    ? { tone: 'idle', text: slimRowStateLabel(row) }
+                    : row.live
+                      ? { tone: 'ok', text: slimRowStateLabel(row) }
+                      : { tone: 'idle', text: slimRowStateLabel(row) }
+          var sub =
+            slimProjectName(row) +
+            ' · ' + slimFmtBytes(row.fileBytes) +
+            (typeof row.subCount === 'number' && row.subCount > 0 ? ' · 含 ' + row.subCount + ' 个子代理' : '')
           return React.createElement(
             'tr',
-            {
-              key: row.id,
-              style: {
-                background: hot ? 'rgba(64, 145, 255, 0.07)' : i % 2 === 1 ? 'rgba(255,255,255,0.015)' : 'transparent',
-                opacity: row.archived ? 0.55 : 1,
-              },
-            },
-            React.createElement('td', { style: Object.assign({}, cellStyle, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }), title: row.cwd || '' }, slimProjectName(row)),
-            React.createElement('td', { style: Object.assign({}, cellStyle, { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }), title: nameTitle },
-              row.title || '(无标题)',
-                            hot ? React.createElement('span', { className: 'dshp-tag', style: { marginLeft: '6px' } }, '命中') : null,
-            ),
-            React.createElement('td', { style: Object.assign({}, cellStyle, { textAlign: 'right', fontVariantNumeric: 'tabular-nums' }) }, slimFmtInt(row.events)),
-            React.createElement('td', { style: Object.assign({}, cellStyle, { textAlign: 'right', fontVariantNumeric: 'tabular-nums' }) }, slimFmtBytes(row.fileBytes)),
-             React.createElement('td', { style: Object.assign({}, cellStyle, { textAlign: 'right', fontVariantNumeric: 'tabular-nums' }), title: typeof row.subCount === 'number' && row.subCount > 0 ? row.subCount + ' 个子代理' : '没有子代理' }, typeof row.subCount === 'number' ? slimFmtInt(row.subCount) : '0'),
-            React.createElement('td', { style: Object.assign({}, cellStyle, { textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }), title: typeof row.ctxTokens === 'number' ? '上下文 ' + row.ctxTokens + ' tokens' + (typeof row.ctxWindow === 'number' ? ' / 窗口 ' + row.ctxWindow : '') : '上下文' }, slimCtxLabel(row)),
-            // 0.4.79：默认模型列——直接 compact 时继承的模型（与宿主 slimOne 的
-            // lastUsed 回退同源：modelSelection.lastUsed）。
-            // 0.4.83：只显示模型名（完整 provider/model/effort 进 tooltip）
-            // ——"provider/model · effort" 在 16% 列宽里永远截半。
-            React.createElement('td', { style: Object.assign({}, cellStyle, { fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }) },
-              row.provider
-                ? React.createElement('span', { title: row.provider + '/' + (row.model || '?') + (row.effort ? '（effort: ' + row.effort + '）' : '') + ' — 设置里未指定 compact 模型时瘦身用它' },
-                    row.model || '?')
-                : '—',
-            ),
-            React.createElement('td', { style: Object.assign({}, cellStyle, { overflow: 'hidden' }) },
-              React.createElement(
-                'span',
-                {
-                  className: 'dshp-tag',
-                  style: {
-                    color: row.running ? '#ff9f43' : row.archived ? '#8a8f98' : 'var(--dsw-alias-label-primary, #e8eaed)',
-                  },
-                },
-                slimRowStateLabel(row),
-              ),
-            ),
-            React.createElement('td', { style: Object.assign({}, cellStyle, { overflow: 'hidden' }) }, row.running ? React.createElement('span', { style: { color: '#ff9f43' } }, '是') : '否'),
+            { key: row.id, 'data-hot': hot ? '1' : undefined, 'data-dim': row.archived ? '1' : undefined },
             React.createElement(
               'td',
-              { style: Object.assign({}, cellStyle, { whiteSpace: 'nowrap', overflow: 'hidden' }) },
-              React.createElement(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dshp-btn-sm',
-                  disabled: buttonDisabled,
-                  onClick: function () {
-                    if (!buttonDisabled) requestSlim([row.id], '单个会话')
-                  },
-                },
-                buttonLabel,
-              ),
+              { title: nameTitle },
+              React.createElement('div', { className: 'dshp-cell-t' }, row.title || '(无标题)'),
+              React.createElement('div', { className: 'dshp-cell-sub dshp-cell-t', title: row.cwd || '' }, sub),
+            ),
+            React.createElement(
+              'td',
+              { 'data-r': '1', title: '事件数 ' + slimFmtInt(row.events) + (hot ? ' ≥ 阈值 ' + slimFmtInt(minEvents) : ' < 阈值 ' + slimFmtInt(minEvents)) },
+              React.createElement('div', { className: 'dshp-num' }, slimFmtInt(row.events)),
+              slimMeter(hot ? 'accent' : 'idle', (row.events / minEvents) * 100),
+            ),
+            React.createElement(
+              'td',
+              { 'data-r': '1', title: typeof row.ctxTokens === 'number' ? '上下文 ' + row.ctxTokens + ' tokens' + (typeof row.ctxWindow === 'number' ? ' / 窗口 ' + row.ctxWindow : '') : '上下文' },
+              ctxPct === null
+                ? React.createElement('div', { className: 'dshp-num' }, slimCtxLabel(row))
+                : React.createElement(
+                    React.Fragment,
+                    null,
+                    React.createElement(
+                      'div',
+                      { className: 'dshp-num' },
+                      slimFmtShortNum(row.ctxTokens),
+                      React.createElement('span', { className: 'dshp-faint' }, ' / ' + slimFmtShortNum(row.ctxWindow)),
+                    ),
+                    slimMeter(ctxTone, ctxPct),
+                  ),
+            ),
+            // 0.4.79：默认模型列——直接 compact 时继承的模型（与宿主 slimOne 的
+            // lastUsed 回退同源：modelSelection.lastUsed）。完整 provider/model/effort 进 tooltip。
+            React.createElement(
+              'td',
+              null,
+              row.provider
+                ? React.createElement(
+                    'div',
+                    { className: 'dshp-cell-t', title: row.provider + '/' + (row.model || '?') + (row.effort ? '（effort: ' + row.effort + '）' : '') + ' — 设置里未指定 compact 模型时瘦身用它' },
+                    row.model || '?',
+                  )
+                : '—',
+            ),
+            React.createElement(
+              'td',
+              null,
+              React.createElement('span', { className: 'dshp-state' }, React.createElement('i', { className: 'dshp-dot', 'data-tone': st.tone, 'data-pulse': st.pulse ? '1' : undefined }), st.text),
+            ),
+            React.createElement(
+              'td',
+              { 'data-r': '1' },
+              isPending
+                ? React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: true }, buttonLabel)
+                : buttonDisabled
+                ? React.createElement('span', { className: 'dshp-faint', title: buttonLabel }, '—')
+                : React.createElement(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dshp-btn-sm',
+                      onClick: function () {
+                        requestSlim([row.id], '单个会话')
+                      },
+                    },
+                    '瘦身',
+                  ),
             ),
           )
         })
 
-        // ---- 内存三色条：DSH(rss) + 其余已用 + 空闲 = 总内存 ----
+        // ---- 内存条：DSH(rss) + 其余已用 + 空闲 = 总内存（强调色 = DSH）----
         var memoryBar = null
         if (mem && typeof mem.total === 'number' && mem.total > 0) {
           var rssPct = Math.min(100, (mem.rss / mem.total) * 100)
@@ -744,56 +757,42 @@
           var freePct = Math.max(0, 100 - rssPct - otherPct)
           memoryBar = React.createElement(
             'div',
-            { style: { marginTop: '14px' } },
+            { className: 'dshp-vfield' },
             React.createElement(
               'div',
-              {
-                style: {
-                  display: 'flex',
-                  height: '18px',
-                  borderRadius: '5px',
-                  overflow: 'hidden',
-                  border: '1px solid var(--dsw-alias-border-secondary, #2a2f3a)',
-                  background: 'rgba(255,255,255,0.04)',
-                },
-              },
-              React.createElement('div', { style: { width: rssPct + '%', background: '#e5534b', transition: 'width 0.6s' } }),
-              React.createElement('div', { style: { width: otherPct + '%', background: '#e0a63f', transition: 'width 0.6s' } }),
-              React.createElement('div', { style: { width: freePct + '%', background: 'rgba(120,140,170,0.25)' } }),
+              { className: 'dshp-section-head' },
+              React.createElement('div', { className: 'dshp-flabel' }, '系统内存'),
+              React.createElement('span', { className: 'dshp-spacer' }),
+              React.createElement('span', { className: 'dshp-note' }, '总 ' + slimFmtBytes(mem.total) + ' · 已用 ' + slimFmtBytes(mem.used)),
             ),
             React.createElement(
               'div',
-              { style: { display: 'flex', flexWrap: 'wrap', gap: '14px', marginTop: '6px', fontSize: '12px', color: 'var(--dsw-alias-label-secondary, #9aa0a6)' } },
-              React.createElement('span', null,
-                React.createElement('span', { style: { display: 'inline-block', width: '10px', height: '10px', background: '#e5534b', borderRadius: '2px', marginRight: '4px' } }),
-                'DSH 进程 ' + slimFmtBytes(mem.rss) + '（pid ' + mem.pid + '）',
-              ),
-              React.createElement('span', null,
-                React.createElement('span', { style: { display: 'inline-block', width: '10px', height: '10px', background: '#e0a63f', borderRadius: '2px', marginRight: '4px' } }),
-                '其余已用 ' + slimFmtBytes(Math.max(0, mem.used - mem.rss)),
-              ),
-              React.createElement('span', null,
-                React.createElement('span', { style: { display: 'inline-block', width: '10px', height: '10px', background: 'rgba(120,140,170,0.25)', borderRadius: '2px', marginRight: '4px' } }),
-                '空闲 ' + slimFmtBytes(mem.free),
-              ),
-              React.createElement('span', { style: { marginLeft: 'auto' } }, '系统总内存 ' + slimFmtBytes(mem.total) + '，已用 ' + slimFmtBytes(mem.used)),
+              { className: 'dshp-comp', 'data-big': '1' },
+              React.createElement('i', { 'data-k': 'mine', style: { flex: rssPct + ' 1 0' } }),
+              React.createElement('i', { 'data-k': 'used', style: { flex: otherPct + ' 1 0' } }),
+              React.createElement('i', { 'data-k': 'base', style: { flex: freePct + ' 1 0' } }),
             ),
+            promptLegend([
+              { k: 'mine', text: 'DSH 进程 ' + slimFmtBytes(mem.rss) + '（pid ' + mem.pid + '）' },
+              { k: 'used', text: '其余已用 ' + slimFmtBytes(Math.max(0, mem.used - mem.rss)) },
+              { k: 'base', text: '空闲 ' + slimFmtBytes(mem.free) },
+            ]),
           )
         }
 
         // ---- 队列渲染 ----
-        var queueRows = queue.map(function (job, i) {
+        var queueRows = queue.map(function (job) {
           var elapsed = job.startedAt ? Date.now() - job.startedAt : Date.now() - (job.at || Date.now())
           return React.createElement(
             'div',
-            { key: job.key, style: { display: 'flex', gap: '10px', alignItems: 'center', padding: '4px 0', fontSize: '13px' } },
-            React.createElement('span', { style: { color: '#4c9aff', flex: '0 0 auto' } }, '●'),
-            React.createElement('span', { style: { flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, job.title),
-            React.createElement('span', { style: { color: 'var(--dsw-alias-label-secondary, #9aa0a6)', flex: '0 0 auto' } }, slimPhaseLabel(job.phase)),
-            React.createElement('span', { style: { color: 'var(--dsw-alias-label-tertiary, #6b7280)', flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' } }, slimElapsed(elapsed)),
+            { key: job.key, className: 'dshp-jobrow' },
+            React.createElement('i', { className: 'dshp-dot', 'data-tone': 'accent' }),
+            React.createElement('span', { className: 'dshp-cell-t' }, job.title),
+            React.createElement('span', { className: 'dshp-hint' }, slimPhaseLabel(job.phase)),
+            React.createElement('span', { className: 'dshp-num' }, slimElapsed(elapsed)),
           )
         })
-        var doneRows = done.slice(0, 20).map(function (job, i) {
+        var doneRows = done.slice(0, 20).map(function (job) {
           var okJob = job.phase === 'done'
           var fullDetail = ''
           if (okJob && job.detail) {
@@ -810,31 +809,30 @@
           }
           if (Array.isArray(job.warnings) && job.warnings.length > 0) fullDetail += '；警告：' + job.warnings.join('；')
           if (job.errorCode) fullDetail += '（' + job.errorCode + '）'
-          // 0.4.84：完成项一行结果（全文进 tooltip）；失败项原因完整换行
-          // 显示（用户点名「失败原因可以详细一点」）。
+          // 0.4.84：完成项一行结果（全文进 tooltip）；失败项原因完整换行显示。
           var shortDetail =
             okJob && job.detail
               ? '归档为 ' + (job.detail.archiveTitle || '?') + ' · 新会话 ' + (job.detail.newSessionId ? String(job.detail.newSessionId).slice(0, 8) : '?')
               : fullDetail
-          var detailStyle = okJob
-            ? { flex: '1 1 auto', color: 'var(--dsw-alias-label-tertiary, #6b7280)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
-            : { flex: '1 1 auto', color: '#e5534b', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', lineHeight: 1.5 }
           return React.createElement(
             'div',
-            { key: job.key, style: { display: 'flex', gap: '10px', alignItems: okJob ? 'center' : 'flex-start', padding: '3px 0', fontSize: '12px' } },
-            React.createElement('span', { style: { color: okJob ? '#3fb950' : '#e5534b', flex: '0 0 auto' } }, okJob ? '✓' : '✗'),
-            React.createElement('span', { style: { flex: '0 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, job.title),
-            React.createElement('span', { style: detailStyle, title: okJob ? fullDetail : undefined }, shortDetail),
+            { key: job.key },
+            React.createElement(
+              'div',
+              { className: 'dshp-jobrow' },
+              React.createElement('i', { className: 'dshp-dot', 'data-tone': okJob ? 'ok' : 'err' }),
+              React.createElement('span', { className: 'dshp-cell-t' }, job.title),
+              okJob ? React.createElement('span', { className: 'dshp-hint dshp-cell-t', title: fullDetail }, shortDetail) : null,
+            ),
+            okJob ? null : React.createElement('div', { className: 'dshp-callout', 'data-tone': 'err', style: { marginBottom: '4px' } }, React.createElement('span', null, shortDetail)),
           )
         })
 
         var lastAt = state && state.now ? new Date(state.now).toLocaleTimeString() : '—'
 
-        // ---- 设置卡（draft 输入，0.4.72 版式）----
-        // 头行：标题 + 保存按钮（右对齐）；正文两个分组网格：
-        // 「筛选与节奏」（事件数/批量大小）与「compact 模型」
-        // （provider/模型名/effort）。控件统一走 dshp-number /
-        // dshp-text-input / dshp-btn（与 prompts 页同一套基元）。
+        // ---- 设置卡（draft 输入）----
+        // 头行：标题 + 保存；两个分组：「筛选」（事件数 / 批量大小）与「压缩模型」
+        // （provider / 模型名 / effort，改完即生效，旁边实时显示校验结论）。
         var settingsCard = null
         if (draft) {
           var field = function (label, control) {
@@ -845,252 +843,242 @@
               control,
             )
           }
-          var gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 16px' }
+          var checkTag =
+            modelCheck && modelCheck.skipped
+              ? React.createElement('span', null, '未设置：各会话用各自的模型')
+              : modelCheck && modelCheck.ok !== false
+                ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'ok' }, '✓ 模型可用')
+                : modelCheck
+                  ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'err' }, '✗ 模型不可用')
+                  : null
           settingsCard = React.createElement(
             'div',
             { className: 'dshp-card' },
             React.createElement(
               'div',
-              { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
-              React.createElement('span', { style: { fontSize: '14px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, '瘦身设置'),
+              { className: 'dshp-section-head' },
+              React.createElement('div', { className: 'dshp-h' }, '瘦身设置'),
               saveNote ? React.createElement('span', { className: 'dshp-note' }, saveNote) : null,
-              React.createElement(
-                'button',
-                { type: 'button', className: 'dshp-btn', onClick: saveSettings, disabled: saving, style: { marginLeft: 'auto' } },
-                saving ? '保存中…' : '保存设置',
-              ),
+              React.createElement('span', { className: 'dshp-spacer' }),
+              React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: saveSettings, disabled: saving }, saving ? '保存中…' : '保存设置'),
             ),
-            React.createElement('div', { className: 'dshp-hint' }, '按事件数筛选；子代理折叠进父会话'),
-            React.createElement('div', { style: gridStyle },
-              field('事件数 ≥',
-                React.createElement('input', { type: 'number', min: '1', className: 'dshp-number', style: { width: '100%' }, value: draft.minEvents, onChange: function (e) { setDraft(function (d) { return Object.assign({}, d, { minEvents: e.target.value }) }) } })),
-              field('批量大小',
-                React.createElement('input', { type: 'number', min: '1', max: '10', className: 'dshp-number', style: { width: '100%' }, value: draft.batchSize, onChange: function (e) { setDraft(function (d) { return Object.assign({}, d, { batchSize: e.target.value }) }) } })),
-            ),
-            React.createElement('div', { className: 'dshp-hint', style: { marginTop: '6px' } },
-              '留空 = 用各会话自己的模型'),
+            React.createElement('div', { className: 'dshp-gh', style: { margin: '2px 0 0' } }, '筛选', React.createElement('span', null, '按事件数；子代理折叠进父会话')),
             React.createElement(
               'div',
-              { className: 'dshp-note', style: { marginTop: '2px', fontSize: '12px' }, title: '改完即生效，与「测试调用」同一条路线' },
-              '瘦身使用：' +
-                (String(draft.compactProvider || '').trim() && String(draft.compactModel || '').trim()
-                  ? String(draft.compactProvider).trim() + '/' + String(draft.compactModel).trim() +
-                    (String(draft.compactEffort || '').trim() ? '（effort ' + String(draft.compactEffort).trim() + '）' : '')
-                  : '各会话自己的模型') +
-                '',
+              { className: 'dshp-grid' },
+              field(
+                '事件数 ≥',
+                React.createElement('input', { type: 'number', min: '1', className: 'dshp-number', style: { width: '100%' }, value: draft.minEvents, onChange: function (e) { setDraft(function (d) { return Object.assign({}, d, { minEvents: e.target.value }) }) } }),
+              ),
+              field(
+                '批量大小',
+                React.createElement('input', { type: 'number', min: '1', max: '10', className: 'dshp-number', style: { width: '100%' }, value: draft.batchSize, onChange: function (e) { setDraft(function (d) { return Object.assign({}, d, { batchSize: e.target.value }) }) } }),
+              ),
             ),
+            React.createElement('div', { className: 'dshp-gh', style: { margin: '8px 0 0' }, title: '改完即生效，与「测试调用」同一条路线' }, '压缩模型', checkTag),
             catalog
               ? (function () {
-                var groups = Array.isArray(catalog.groups) ? catalog.groups : []
-                var providers = [] // [{id, name}]（name = 目录里的显示名）
-                var seenP = {}
-                for (var pg = 0; pg < groups.length; pg++) {
-                  var gid = groups[pg] && groups[pg].id
-                  if (gid && !seenP[gid]) { seenP[gid] = true; providers.push({ id: gid, name: typeof groups[pg].name === 'string' && groups[pg].name ? groups[pg].name : gid }) }
-                }
-                var selP = String(draft.compactProvider || '')
-                var selM = String(draft.compactModel || '')
-                var selE = String(draft.compactEffort || '')
-                var curGroup = null
-                for (var gg = 0; gg < groups.length; gg++) if (groups[gg] && groups[gg].id === selP) curGroup = groups[gg]
-                var modelOpts = []
-                var curModel = null
-                if (curGroup && Array.isArray(curGroup.models)) {
-                  for (var mm = 0; mm < curGroup.models.length; mm++) {
-                    var mo = curGroup.models[mm]
-                    if (mo && mo.id) { modelOpts.push(mo); if (mo.id === selM) curModel = mo }
+                  var groups = Array.isArray(catalog.groups) ? catalog.groups : []
+                  var providers = [] // [{id, name}]（name = 目录里的显示名）
+                  var seenP = {}
+                  for (var pg = 0; pg < groups.length; pg++) {
+                    var gid = groups[pg] && groups[pg].id
+                    if (gid && !seenP[gid]) {
+                      seenP[gid] = true
+                      providers.push({ id: gid, name: typeof groups[pg].name === 'string' && groups[pg].name ? groups[pg].name : gid })
+                    }
                   }
-                }
-                // 保存值不在目录里（目录刷新间隙 / 模型下线）：仍保留为可选项，不丢用户已填的值
-                if (!curModel && selM) curModel = { id: selM, reasoning: null }
-                var effortOpts = []
-                if (curModel && curModel.reasoning && Array.isArray(curModel.reasoning.efforts)) effortOpts = curModel.reasoning.efforts.slice()
-                // 同模型：保存的 effort 不在目录里时保留为可选项（不丢已填值）
-                if (selE && effortOpts.every(function (eo) { return !eo || eo.id !== selE })) effortOpts = effortOpts.concat([{ id: selE, name: null }])
-                var selectStyle = { width: '100%' }
-                return React.createElement('div', { style: gridStyle },
-                  field('provider',
-                    React.createElement('select', { style: selectStyle, value: selP, onChange: function (e) { setCompact(e.target.value, '', '') } },
-                      React.createElement('option', { value: '' }, '留空 = 继承各会话自身'),
-                      providers.map(function (pv) {
-                        return React.createElement('option', { key: pv.id, value: pv.id }, pv.name !== pv.id ? pv.name + '（' + pv.id + '）' : pv.id)
-                      }),
+                  var selP = String(draft.compactProvider || '')
+                  var selM = String(draft.compactModel || '')
+                  var selE = String(draft.compactEffort || '')
+                  var curGroup = null
+                  for (var gg = 0; gg < groups.length; gg++) if (groups[gg] && groups[gg].id === selP) curGroup = groups[gg]
+                  var modelOpts = []
+                  var curModel = null
+                  if (curGroup && Array.isArray(curGroup.models)) {
+                    for (var mm = 0; mm < curGroup.models.length; mm++) {
+                      var mo = curGroup.models[mm]
+                      if (mo && mo.id) {
+                        modelOpts.push(mo)
+                        if (mo.id === selM) curModel = mo
+                      }
+                    }
+                  }
+                  // 保存值不在目录里（目录刷新间隙 / 模型下线）：仍保留为可选项，不丢用户已填的值
+                  if (!curModel && selM) curModel = { id: selM, reasoning: null }
+                  var effortOpts = []
+                  if (curModel && curModel.reasoning && Array.isArray(curModel.reasoning.efforts)) effortOpts = curModel.reasoning.efforts.slice()
+                  // 同模型：保存的 effort 不在目录里时保留为可选项（不丢已填值）
+                  if (selE && effortOpts.every(function (eo) { return !eo || eo.id !== selE })) effortOpts = effortOpts.concat([{ id: selE, name: null }])
+                  var selectStyle = { width: '100%' }
+                  return React.createElement(
+                    'div',
+                    { className: 'dshp-grid' },
+                    field(
+                      'provider',
+                      React.createElement(
+                        'select',
+                        { className: 'dshp-select', style: selectStyle, value: selP, onChange: function (e) { setCompact(e.target.value, '', '') } },
+                        React.createElement('option', { value: '' }, '留空 = 继承各会话自身'),
+                        providers.map(function (pv) {
+                          return React.createElement('option', { key: pv.id, value: pv.id }, pv.name !== pv.id ? pv.name + '（' + pv.id + '）' : pv.id)
+                        }),
+                      ),
                     ),
-                  ),
-                  field('模型名',
-                    React.createElement('select', { style: selectStyle, value: selM, onChange: function (e) { setCompact(selP, e.target.value, '') } },
-                      React.createElement('option', { value: '' }, '留空 = 继承'),
-                      (curGroup || selM ? modelOpts : []).map(function (mo) {
-                        return React.createElement('option', { key: mo.id, value: mo.id }, mo.id)
-                      }),
+                    field(
+                      '模型名',
+                      React.createElement(
+                        'select',
+                        { className: 'dshp-select', style: selectStyle, value: selM, onChange: function (e) { setCompact(selP, e.target.value, '') } },
+                        React.createElement('option', { value: '' }, '留空 = 继承'),
+                        (curGroup || selM ? modelOpts : []).map(function (mo) {
+                          return React.createElement('option', { key: mo.id, value: mo.id }, mo.id)
+                        }),
+                      ),
                     ),
-                  ),
-                  field('effort',
-                    React.createElement('select', { style: selectStyle, value: selE, onChange: function (e) { setCompact(selP, selM, e.target.value) } },
-                      React.createElement('option', { value: '' }, '留空 = 继承 / 提供方默认'),
-                      effortOpts.map(function (eo) {
-                        if (!eo || !eo.id) return null
-                        var name = eo.name ? eo.name + '（' : ''
-                        return React.createElement('option', { key: eo.id, value: eo.id }, name + eo.id + (eo.name ? '）' : ''))
-                      }),
+                    field(
+                      'effort',
+                      React.createElement(
+                        'select',
+                        { className: 'dshp-select', style: selectStyle, value: selE, onChange: function (e) { setCompact(selP, selM, e.target.value) } },
+                        React.createElement('option', { value: '' }, '留空 = 继承 / 提供方默认'),
+                        effortOpts.map(function (eo) {
+                          if (!eo || !eo.id) return null
+                          var name = eo.name ? eo.name + '（' : ''
+                          return React.createElement('option', { key: eo.id, value: eo.id }, name + eo.id + (eo.name ? '）' : ''))
+                        }),
+                      ),
                     ),
+                  )
+                })()
+              : React.createElement(
+                  'div',
+                  { className: 'dshp-vfield' },
+                  catalogLoading
+                    ? React.createElement('div', { className: 'dshp-hint' }, '模型列表加载中…')
+                    : catalogError
+                      ? callout('warn', catalogError)
+                      : null,
+                  React.createElement(
+                    'div',
+                    { className: 'dshp-grid' },
+                    field('provider', React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '留空 = 继承', value: draft.compactProvider, onChange: function (e) { setCompact(e.target.value, draft.compactModel, draft.compactEffort) } })),
+                    field('模型名', React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '留空 = 继承', value: draft.compactModel, onChange: function (e) { setCompact(draft.compactProvider, e.target.value, draft.compactEffort) } })),
+                    field('effort', React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '如 high / max，留空 = 继承', value: draft.compactEffort, onChange: function (e) { setCompact(draft.compactProvider, draft.compactModel, e.target.value) } })),
                   ),
-                )
-              })()
-              : React.createElement('div', null,
-                catalogLoading
-                  ? React.createElement('div', { className: 'dshp-hint' }, '模型列表加载中…' )
-                  : catalogError
-                    ? React.createElement('div', { className: 'dshp-note', style: { fontSize: '12px', color: '#e0a63f', marginBottom: '6px' } }, catalogError)
-                    : null,
-                React.createElement('div', { style: gridStyle },
-                  field('provider',
-                    React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '留空 = 继承', value: draft.compactProvider, onChange: function (e) { setCompact(e.target.value, draft.compactModel, draft.compactEffort) } })),
-                  field('模型名',
-                    React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '留空 = 继承', value: draft.compactModel, onChange: function (e) { setCompact(draft.compactProvider, e.target.value, draft.compactEffort) } })),
-                  field('effort',
-                    React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '如 high / max，留空 = 继承', value: draft.compactEffort, onChange: function (e) { setCompact(draft.compactProvider, draft.compactModel, e.target.value) } })),
                 ),
-              ),
-            // 0.4.79：compact 模型可用性实时校验（宿主 resolveCallConfig 同一裁决）
-            modelCheck && modelCheck.skipped
-              ? React.createElement('div', { className: 'dshp-hint', style: { marginTop: '6px' } }, 'compact 模型未设置：瘦身时各会话用各自的模型。')
-              : modelCheck && modelCheck.ok !== false
-                ? React.createElement('div', { className: 'dshp-note', style: { marginTop: '6px', color: '#3fb950', fontSize: '12px' } }, '✓ 模型可用')
-                : modelCheck
-                  ? React.createElement('div', { className: 'dshp-note', style: { marginTop: '6px', color: '#e5534b', fontSize: '12px', overflowWrap: 'anywhere' } }, '✗ ' + (modelCheck.error || '模型不可用'))
-                  : null,
+            modelCheck && modelCheck.ok === false ? callout('err', '✗ ' + (modelCheck.error || '模型不可用')) : null,
             // 0.4.81：测试调用（真实最小请求；空文本/失败时给出 provider 真实原因）
             React.createElement(
               'div',
-              { style: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' } },
-              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: !!(modelTest && modelTest.busy), onClick: runModelTest }, (modelTest && modelTest.busy) ? '测试中…' : '测试调用'),
-              modelTest && !modelTest.busy
-                ? modelTest.ok
-                  ? React.createElement('div', { className: 'dshp-note', style: { color: '#3fb950', fontSize: '12px', overflowWrap: 'anywhere' } }, '✓ 测试调用成功：' + (modelTest.text || '（空）') + '（usage: ' + (modelTest.usage || '无') + '）')
-                  : React.createElement('div', { className: 'dshp-note', style: { color: '#e5534b', fontSize: '12px', overflowWrap: 'anywhere' } }, '✗ 测试调用失败：' + (modelTest.error || '未知'))
+              { className: 'dshp-footer' },
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: !!(modelTest && modelTest.busy), onClick: runModelTest }, modelTest && modelTest.busy ? '测试中…' : '测试调用'),
+              modelTest && !modelTest.busy && modelTest.ok
+                ? React.createElement('span', { className: 'dshp-note' }, '✓ 测试调用成功：' + (modelTest.text || '（空）') + '（usage: ' + (modelTest.usage || '无') + '）')
                 : null,
             ),
+            modelTest && !modelTest.busy && !modelTest.ok ? callout('err', '✗ 测试调用失败：' + (modelTest.error || '未知')) : null,
           )
         }
 
+        var queueCount = queue.length + (currentJob ? 1 : 0)
         return React.createElement(
           'div',
-          { style: { display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '1080px' } },
-          React.createElement('div', null,
-            React.createElement('h3', { style: { margin: '0 0 4px' } }, '会话瘦身'),
-            React.createElement('div', { className: 'dshp-hint' },
-              '把长会话压成 checkpoint 建新会话，旧会话改名归档。',
-            ),
+          { className: 'dshp-form dshp-wide' },
+          React.createElement(
+            'div',
+            { className: 'dshp-vfield', style: { gap: '2px' } },
+            React.createElement('h3', { className: 'dshp-title' }, '会话瘦身'),
+            React.createElement('div', { className: 'dshp-hint' }, '把长会话压成 checkpoint 建新会话，旧会话改名归档。'),
           ),
           settingsCard,
+          error ? callout('err', error) : null,
           React.createElement(
             'div',
-            { style: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' } },
-            React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: requestRefresh, disabled: refreshing }, refreshing ? '统计中…' : '刷新统计'),
-            React.createElement('label', { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: 'var(--dsw-alias-label-secondary, #9aa0a6)', cursor: 'pointer' } },
-              React.createElement('input', { type: 'checkbox', checked: showArchived, onChange: function (e) { setShowArchived(e.target.checked) } }),
-              '显示已归档',
-            ),
-            React.createElement('span', { className: 'dshp-note' }, '上次统计 ' + lastAt),
-          ),
-          error ? React.createElement(
-            'div',
-            {
-              style: {
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '.5px solid rgba(229, 83, 75, 0.4)',
-                background: 'rgba(229, 83, 75, 0.08)',
-                color: '#e5534b',
-                fontSize: '12px',
-                lineHeight: '18px',
-              },
-            },
-            error,
-          ) : null,
-          React.createElement(
-            'div',
-            { style: { overflowX: 'auto', border: '1px solid var(--dsw-alias-border-tertiary, #1f242e)', borderRadius: '8px' } },
+            { className: 'dshp-vfield', style: { gap: '10px' } },
             React.createElement(
-              'table',
-              // 0.4.81：固定布局 + 百分比列宽（自适应面板宽度）——0.4.78 的
-              // 定宽列（总 762px + minWidth 1010px）在窄面板里溢出/交叠
-              // （用户报告「几个项目的文本交叠在一起」）。百分比下任何宽度
-              // 都 100% 排满、文本列省略号截断，不再交叠；固定布局保留，
-              // 2.5s 轮询不再引起列宽抖动。
-              { style: { width: '100%', minWidth: '640px', borderCollapse: 'collapse', tableLayout: 'fixed' } },
-              React.createElement('colgroup', null,
-                React.createElement('col', { style: { width: '14%' } }),
-                React.createElement('col', null),
-                React.createElement('col', { style: { width: '7%' } }),
-                React.createElement('col', { style: { width: '10%' } }), // 大小
-                 React.createElement('col', { style: { width: '7%' } }), // 子代理
-                React.createElement('col', { style: { width: '12%' } }),
-                React.createElement('col', { style: { width: '16%' } }), // 0.4.79：默认模型
-                React.createElement('col', { style: { width: '8%' } }),
-                React.createElement('col', { style: { width: '6%' } }),
-                React.createElement('col', { style: { width: '9%' } }),
+              'div',
+              { className: 'dshp-toolbar' },
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', onClick: requestRefresh, disabled: refreshing }, refreshing ? '统计中…' : '刷新统计'),
+              React.createElement(
+                'label',
+                { className: 'dshp-check' },
+                React.createElement('input', { type: 'checkbox', checked: showArchived, onChange: function (e) { setShowArchived(e.target.checked) } }),
+                '显示已归档',
               ),
-              React.createElement('thead', null, tableHead),
-              React.createElement('tbody', null, bodyRows.length > 0 ? bodyRows : React.createElement('tr', null, React.createElement('td', { colSpan: 10, style: { padding: '18px', textAlign: 'center', color: 'var(--dsw-alias-label-tertiary, #6b7280)' } }, '暂无会话数据'))),
+              React.createElement('span', { className: 'dshp-spacer' }),
+              React.createElement('span', { className: 'dshp-note' }, '上次统计 ' + lastAt),
+            ),
+            React.createElement(
+              'div',
+              { className: 'dshp-tblwrap' },
+              React.createElement(
+                'table',
+                // 固定布局：2.5s 轮询不再引起列宽抖动；文本列省略号截断，不再交叠。
+                { className: 'dshp-tbl' },
+                React.createElement(
+                  'colgroup',
+                  null,
+                  React.createElement('col', null),
+                  React.createElement('col', { style: { width: '84px' } }),
+                  React.createElement('col', { style: { width: '112px' } }),
+                  React.createElement('col', { style: { width: '104px' } }),
+                  React.createElement('col', { style: { width: '80px' } }),
+                  React.createElement('col', { style: { width: '84px' } }),
+                ),
+                React.createElement('thead', null, tableHead),
+                React.createElement(
+                  'tbody',
+                  null,
+                  bodyRows.length > 0
+                    ? bodyRows
+                    : React.createElement('tr', null, React.createElement('td', { colSpan: 6, style: { padding: '18px', textAlign: 'center', color: 'var(--dsw-alias-label-tertiary)' } }, '暂无会话数据')),
+                ),
+              ),
+            ),
+            React.createElement(
+              'div',
+              { className: 'dshp-footer' },
+              React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: eligibleIds.length === 0, onClick: function () { requestSlim(eligibleIds, '筛选命中') } }, '批量瘦身 · 筛选 ' + eligibleIds.length + ' 个'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: idleIds.length === 0, onClick: function () { requestSlim(idleIds, '全部非进行中') } }, '批量瘦身 · 全部 ' + idleIds.length + ' 个'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-ghost dshp-btn-danger', disabled: queue.length === 0 && !(state && state.busy), onClick: requestStop }, '停止队列'),
+              actionNote ? React.createElement('span', { className: 'dshp-note' }, actionNote) : null,
             ),
           ),
-          React.createElement(
-            'div',
-            { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' } },
-            React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: eligibleIds.length === 0, onClick: function () { requestSlim(eligibleIds, '筛选命中') } },
-              '批量瘦身 · 筛选 ' + eligibleIds.length + ' 个',
-            ),
-            React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: idleIds.length === 0, onClick: function () { requestSlim(idleIds, '全部非进行中') } },
-              '批量瘦身 · 全部 ' + idleIds.length + ' 个',
-            ),
-            React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: queue.length === 0 && !(state && state.busy), onClick: requestStop, style: { color: '#e5534b', borderColor: 'rgba(229,83,75,0.4)' } }, '停止队列'),
-            actionNote ? React.createElement('span', { className: 'dshp-note' }, actionNote) : null,
-          ),
-          memoryBar,
           React.createElement(
             'div',
             { className: 'dshp-card' },
-            React.createElement('div', { className: 'dshp-label', style: { marginBottom: '6px' } }, '处理队列'),
+            React.createElement(
+              'div',
+              { className: 'dshp-section-head' },
+              React.createElement('div', { className: 'dshp-h' }, '处理队列'),
+              queueCount > 0 ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'warn' }, queueCount + ' 个任务') : null,
+            ),
             currentJob
               ? React.createElement(
                   'div',
-                  {
-                    key: currentJob.key + ':current',
-                    style: {
-                      display: 'flex',
-                      gap: '10px',
-                      alignItems: 'center',
-                      padding: '6px 8px',
-                      marginBottom: '4px',
-                      fontSize: '13px',
-                      borderRadius: '6px',
-                      background: 'rgba(255,159,67,0.08)',
-                      border: '1px solid rgba(255,159,67,0.25)',
-                    },
-                  },
-                  React.createElement('span', { style: { color: '#ff9f43', flex: '0 0 auto' } }, '▶'),
-                  React.createElement('span', { style: { flex: '1 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, currentJob.title),
-                  React.createElement('span', { style: { color: '#ff9f43', flex: '0 0 auto' } }, slimPhaseLabel(currentJob.phase)),
-                  // 0.4.79：分片/合并进度（宿主 job.detail → /state current.detail）
-                  currentJob.detail
-                    ? React.createElement('span', { style: { color: 'var(--dsw-alias-label-tertiary, #6b7280)', flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' } }, currentJob.detail)
-                    : null,
+                  { key: currentJob.key + ':current', className: 'dshp-job' },
                   React.createElement(
-                    'span',
-                    { style: { color: 'var(--dsw-alias-label-tertiary, #6b7280)', flex: '0 0 auto', fontVariantNumeric: 'tabular-nums' } },
-                    slimElapsed(Date.now() - (currentJob.startedAt || currentJob.at || Date.now())),
+                    'div',
+                    { className: 'dshp-jobrow', style: { padding: 0 } },
+                    React.createElement('i', { className: 'dshp-dot', 'data-tone': 'warn', 'data-pulse': '1' }),
+                    React.createElement('span', { className: 'dshp-cell-t' }, currentJob.title),
+                    React.createElement('span', { className: 'dshp-tag', 'data-tone': 'warn' }, slimPhaseLabel(currentJob.phase)),
+                    // 0.4.79：分片/合并进度（宿主 job.detail → /state current.detail）
+                    currentJob.detail ? React.createElement('span', { className: 'dshp-hint dshp-num' }, currentJob.detail) : null,
+                    React.createElement('span', { className: 'dshp-num' }, slimElapsed(Date.now() - (currentJob.startedAt || currentJob.at || Date.now()))),
                   ),
+                  React.createElement('div', { className: 'dshp-meter', 'data-tone': 'warn', 'data-busy': '1', style: { marginTop: 0 } }, React.createElement('i', null)),
                 )
               : null,
             !currentJob && queue.length === 0
-              ? React.createElement('div', { className: 'dshp-hint' }, state && state.busy ? 'worker 唤醒中…' : '队列空闲。')
+              ? React.createElement('div', { className: 'dshp-hint' }, state && state.busy ? 'worker 唤醒中…' : '队列空闲')
               : null,
             queueRows,
-            done.length > 0 ? React.createElement('div', { className: 'dshp-label', style: { margin: '10px 0 4px' } }, '已完成') : null,
+            done.length > 0 ? React.createElement('div', { className: 'dshp-lib-h', style: { margin: '6px 0 0' } }, '已完成', React.createElement('span', null, String(Math.min(done.length, 20)))) : null,
             doneRows,
           ),
+          memoryBar,
         )
       }
     }
