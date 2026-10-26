@@ -1,6 +1,6 @@
 # dsh-polish bundle patch.
 #
-# Fourteen Loader rows: one bundle row plus thirteen independently toggleable components. Each row's
+# Fifteen Loader rows: one bundle row plus fourteen independently toggleable components. Each row's
 # `name` must be an importable module specifier (the Loader calls
 # `tree.import(name)`), so the component rows point at subpath exports of this
 # package rather than at colon-qualified ids.
@@ -112,3 +112,17 @@
     - id: 'dsh-polish:session-slim'
       name: 'dsh-polish/session-slim'
       disabled: true
+
+    # Compact uses the selected model: compaction summary calls (manual
+    # /compact, automatic pressure compaction, context-overflow recovery — all
+    # three funnel into one ctx.llm.stream with purpose "compaction") are
+    # re-routed, when stale, to the model the model selector currently holds:
+    # first the session's own modelSelection projection (the composer
+    # selector, written by selectModel the instant the user switches),
+    # falling back to agentDefaultModel.currentSelection(). reasoningEffort is
+    # mirrored to the selection (the old model's effort is rejected outright
+    # when the new model does not support it). Normal conversation steps are
+    # never touched. Row switch is the master switch; no settings form;
+    # read-only route /api/dshp/compact-model/status reports recent reroutes.
+    - id: 'dsh-polish:compact-model'
+      name: 'dsh-polish/compact-model'

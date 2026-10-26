@@ -23,6 +23,7 @@ A collection of independently switchable enhancements for DeepSeek Harness (DSH)
 | `visualize` | ✔ | Renders Mermaid and SVG diagrams | SVG is sanitized; Mermaid is vendored in the package | Upgrade the vendored Mermaid version with regression tests |
 | `keep-effort` | ✔ | Remembers model reasoning effort per session and model | Depends on model-selection projections; persistence failures must not affect the main session | Maintain model-selection compatibility and fail-open behavior |
 | `session-slim` | ✔ | Summarizes an old session and creates a visible replacement | Archives the old session only after replacement visibility, model, workspace, and tool checks pass | Maintain session lifecycle and persistence compatibility |
+| `compact-model` | ✔ | Compaction uses the model the model selector currently has selected | Depends on the `llm/stream` routing waterfall, the session `modelSelection` projection, and `agentDefaultModel`; frozen call options are left untouched | Maintain compaction and model-selection compatibility |
 
 ## Features
 
@@ -51,6 +52,17 @@ The Tool Prompts page reads the global `ctx.tools.schemas()` registry and keeps 
 8. Archive the old session and related child sessions only after every check succeeds.
 
 If the compact provider reports a balance, credential, or rate-limit failure, the component retries with the session's last-used model route. Creation, attachment, and visibility failures keep the old session; the component never silently deletes the original data. Since 0.4.98, the replacement seed starts with a protected empty `system/message` head. Since 0.4.99, the replacement takes over the main view before the old session is archived. Since 0.4.100, ArrowUp recall remains index-driven while the editor applies an asynchronous draft update. Since 1.0.0, the Client performs one delayed, read-only session-catalog refresh after startup to cover Host persistence restoring after the initial Client list request.
+
+### Compaction follows the selected model
+
+`compact-model` makes every compaction summarization call — the manual `/compact` command, automatic pressure compaction, and context-overflow recovery — use the model the model selector currently has selected, instead of the session's last-used model.
+
+- It listens on the official `llm/stream` routing waterfall, which wraps every streaming model call and exposes the same call-options object the adapter reads.
+- It only acts on compaction calls (`purpose === "compaction"`); normal conversation steps are never re-routed.
+- The target model is resolved in order: the session's own `modelSelection` projection (the composer selector, written the instant you switch models), falling back to `agentDefaultModel.currentSelection()` (the global default).
+- `reasoningEffort` is mirrored to the selection, because the new model rejects the old model's effort outright when it does not support it.
+- If the resolved target differs from the call's current route, the provider and model are rewritten in place; if the call options are frozen or any read fails, the call is passed through untouched, so the component can never be what breaks a compaction.
+- The row switch is the master switch and there is no settings form. A read-only route `GET /api/dshp/compact-model/status` reports the current default selection and the most recent re-routes.
 
 ### Visualization
 

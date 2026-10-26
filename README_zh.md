@@ -23,6 +23,7 @@ DSH 的一组可独立开关的增强组件。组件以一个 Cordis bundle 发�
 | `visualize` | ✔ | 渲染 Mermaid 和 SVG 图形 | SVG 会经过严格消毒；Mermaid 使用仓库内置版本 | 跟随上游 Mermaid 版本升级并回归验证 |
 | `keep-effort` | ✔ | 记住会话的模型推理强度 | 依赖模型选择投影；持久化失败不能影响主会话 | 维护模型选择兼容和失败回滚 |
 | `session-slim` | ✔ | 总结旧会话并创建可见的新会话 | 只有 replacement 完成可见性、模型、工作区和工具检查后才归档旧会话 | 维护会话生命周期和持久化兼容性 |
+| `compact-model` | ✔ | 压缩摘要使用模型选择器当前选中的模型 | 依赖 `llm/stream` routing 瀑布、会话 `modelSelection` 投影和 `agentDefaultModel`；调用 options 被冻结时保持原样 | 维护压缩与模型选择兼容性 |
 
 ## 功能说明
 
@@ -51,6 +52,17 @@ DSH 的一组可独立开关的增强组件。组件以一个 Cordis bundle 发�
 8. 只有确认成功后，才归档旧会话和相关子代理。
 
 如果 compact 路线遇到余额、鉴权或限流类 provider 错误，组件会尝试回退到该会话最后使用的模型路线。所有创建、挂载和可见性失败都应保留旧会话，不静默删除原数据。0.4.98 起，replacement 的 seed 先建立空的受保护 `system/message` head，避免第一次真实系统提示词写入后在 DSH 重启时被判为损坏日志。0.4.99 起，当前主会话会在归档前由 replacement 接管。0.4.100 起，上箭头召回在编辑器异步回写期间仍按 recall 索引向更早的 user 消息移动。1.0.0 起，插件启动后会延迟执行一次只读 session catalog 刷新，覆盖 Host persistence 恢复晚于 Client 初次 list 的情况。
+
+### 压缩跟随选择器模型
+
+`compact-model` 让每一次压缩摘要调用（手动 `/compact`、压力自动压缩、上下文溢出恢复——三者收敛到同一个 `ctx.llm.stream`）使用模型选择器当前选中的模型，而不是会话「上一次使用的模型」。
+
+- 监听 DSH 官方的 `llm/stream` routing 瀑布：它包住每一个流式模型调用，且监听器拿到的 options 与 adapter 实际读取的是同一个对象，就地改写即生效。
+- 只处理压缩调用（`purpose === "compaction"`）；正常对话回合绝不改道，会话仍用它自己选的模型。
+- 目标模型按优先级解析：该会话自己的 `modelSelection` 投影（composer 选择器，用户切换当下即写入，不用等下一次真实请求）→ 回退到 `agentDefaultModel.currentSelection()`（全局默认选择）。
+- 同步对齐 `reasoningEffort`：新模型不支持旧 effort 时会被 `llm.resolveCallWithInfo` 直接拒绝（`UNSUPPORTED_REASONING_EFFORT`），带着死模型的 effort 比不带更容易失败。
+- 目标与本次路线不同才改写 provider/model；调用 options 被冻结或任何读取失败时一律原样放行——本组件绝不让压缩调用因为自己而失败。
+- 行开关即总开关，无设置表单；只读路由 `GET /api/dshp/compact-model/status` 报告当前默认选择和最近 20 条改道记录（验证/排障用）。
 
 ### 可视化
 
