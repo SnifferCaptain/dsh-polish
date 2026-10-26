@@ -1,0 +1,84 @@
+{
+  "format": 1,
+  "title": {
+    "en": "DSH Polish Market",
+    "zh": "DSH Polish 插件市场"
+  },
+  "description": {
+    "en": "Community-maintained DSH bundles by SnifferCaptain.",
+    "zh": "由 SnifferCaptain 维护的 DSH 社区插件索引。"
+  },
+  "metadata": {
+    "categories": {
+      "productivity": {
+        "title": {
+          "en": "Productivity",
+          "zh": "效率"
+        }
+      }
+    },
+    "labels": {
+      "stable": {
+        "title": {
+          "en": "Stable",
+          "zh": "稳定版"
+        }
+      }
+    },
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-polish",
+      "title": {
+        "en": "DSH Polish",
+        "zh": "DSH Polish"
+      },
+      "description": {
+        "en": "A collection of optional DSH enhancements, including composer history, workspace LRU, prompts, visualization, effort memory, and safe session slimming.",
+        "zh": "一组可选的 DSH 增强组件，包括编辑器历史、工作区 LRU、提示词、可视化、强度记忆和安全会话瘦身。"
+      },
+      "author": "SnifferCaptain",
+      "homepage": "https://github.com/SnifferCaptain/dsh-polish#readme",
+      "repository": {
+        "url": "https://github.com/SnifferCaptain/dsh-polish"
+      },
+      "metadata": {
+        "category": "productivity",
+        "keywords": [
+          "deepseek-harness",
+          "dsh",
+          "cordis",
+          "session-slim",
+          "composer-history"
+        ],
+        "labels": [
+          "stable"
+        ],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "1.0.0",
+          "publishTimestamp": 1792663228,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0-rc.1 <0.3.0"
+          }
+        },
+        {
+          "version": "1.1.0",
+          "publishTimestamp": 1792984435,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0-rc.1 <0.3.0"
+          }
+        }
+      ]
+    }
+  ]
+}
