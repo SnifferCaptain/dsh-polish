@@ -47,7 +47,7 @@
             // fallback for older hosts, but never treat { ok:false } as an
             // empty successful catalog (that made the menu silently vanish).
             if (response && response.ok === false) {
-              var error = response.error && response.error.message ? response.error.message : String(response.error || '预设列表读取失败')
+              var error = response.error && response.error.message ? response.error.message : String(response.error || t('mode.listFailed'))
               console.warn('[dshp mode-switch] 预设列表读取失败：' + error)
               return
             }
@@ -87,7 +87,7 @@
             result
               .then(function (response) {
                 if (response && response.ok === false) {
-                  var error = response.error && response.error.message ? response.error.message : String(response.error || '写入请求失败')
+                  var error = response.error && response.error.message ? response.error.message : String(response.error || t('mode.writeFailed'))
                   console.warn('[dshp mode-switch] 请求未写入：' + error)
                 }
               })
@@ -179,6 +179,8 @@
 
     // 定位估算宽：卡片本体按内容自适应（width: max-content，上限即此值），
     // 翻转决策用上限值，保证任何实际宽度都不溢出视口。
+    // 当前模式的底色：强调色淡底，明暗主题下都由 token 推导
+    var MODE_SWITCH_SELECTED_BG = 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #3b82f6) 14%, transparent)'
     var MODE_SWITCH_CARD_WIDTH = 240
     var MODE_SWITCH_CARD_GAP = 10
 
@@ -267,6 +269,7 @@
         var presetRows = []
         for (var i = 0; i < presets.length; i++) {
           ;(function (preset) {
+            var selected = preset.id === currentPreset
             presetRows.push(
               React.createElement(
                 'button',
@@ -285,7 +288,7 @@
                     minHeight: '34px',
                     padding: '6px 8px',
                     border: 'none',
-                    background: 'transparent',
+                    background: selected ? MODE_SWITCH_SELECTED_BG : 'transparent',
                     color: 'var(--dsw-alias-label-primary, #1a1a1a)',
                     fontSize: '13px',
                     lineHeight: '20px',
@@ -294,17 +297,46 @@
                     borderRadius: 'var(--dsw-radius-md, 8px)',
                   },
                   onMouseEnter: function (event) { event.currentTarget.style.background = 'var(--dsw-alias-interactive-bg-hover)' },
-                  onMouseLeave: function (event) { event.currentTarget.style.background = 'transparent' },
+                  // 鼠标离开要把当前项自己的淡底放回去，不能一律清成透明
+                  onMouseLeave: function (event) { event.currentTarget.style.background = selected ? MODE_SWITCH_SELECTED_BG : 'transparent' },
                   onClick: function () {
                     setCardOpen(false)
                     requestModeSwitch(child, sessionId, preset.id)
                     if (closeMenu) closeMenu()
                   },
                 },
-                React.createElement('span', { style: { width: '14px', flex: '0 0 14px' } }, preset.id === currentPreset ? '✓' : ''),
+                // 当前项用圆点标记（与设置页的状态点同形），不再用 ✓ 字形占一个字符位
+                React.createElement(
+                  'span',
+                  {
+                    style: {
+                      width: '7px',
+                      height: '7px',
+                      flex: '0 0 7px',
+                      marginLeft: '3px',
+                      marginRight: '2px',
+                      borderRadius: '50%',
+                      background: selected ? 'var(--dsw-alias-state-business-primary, #3b82f6)' : 'transparent',
+                    },
+                  },
+                ),
                 React.createElement('span', { style: { flex: '1 1 auto', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, preset.label),
                 preset.isDefault
-                  ? React.createElement('span', { style: { fontSize: '11px', color: 'var(--dsw-alias-label-secondary, #8a8f98)' } }, '默认')
+                  ? React.createElement(
+                      'span',
+                      {
+                        style: {
+                          flex: '0 0 auto',
+                          fontSize: '11px',
+                          lineHeight: '18px',
+                          padding: '0 7px',
+                          borderRadius: '9px',
+                          background: 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.16))',
+                          color: 'var(--dsw-alias-label-secondary, #8a8f98)',
+                        },
+                      },
+                      t('mode.default'),
+                    )
                   : null,
               ),
             )
@@ -318,7 +350,7 @@
               'div',
               {
                 role: 'menu',
-                'aria-label': '选择模式',
+                'aria-label': t('mode.choose'),
                 className: 'dshp-mode-switch-card',
                 onPointerDown: function (event) { event.stopPropagation() },
                 style: {
@@ -360,7 +392,7 @@
                     color: 'var(--dsw-alias-label-secondary, #8a8f98)',
                   },
                 },
-                '选择模式',
+                t('mode.choose'),
               ),
               presetRows,
             ),
@@ -400,7 +432,7 @@
                 else openCard(event)
               },
             },
-            React.createElement('span', null, '切换模式'),
+            React.createElement('span', null, t('mode.switch')),
             React.createElement('span', { 'aria-hidden': true, style: { color: 'var(--dsw-alias-label-secondary, #8a8f98)' } }, cardOpen ? '×' : '›'),
           ),
           card,

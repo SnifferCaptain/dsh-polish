@@ -44,11 +44,11 @@
      */
     var patcherStatsStore = createStore({ panels: 0, claimed: 0, skip: '' })
     var SKIP_TEXT = {
-      'no-session': '会话对不上',
-      'no-entry': '占位未挂载',
-      disabled: '行开关已关',
-      'single-row': '只有模型行',
-      'not-effort': '不是推理等级行',
+      'no-session': t('depth.skip.no-session'),
+      'no-entry': t('depth.skip.no-entry'),
+      disabled: t('depth.skip.disabled'),
+      'single-row': t('depth.skip.single-row'),
+      'not-effort': t('depth.skip.not-effort'),
     }
     function setPatcherStats(next) {
       var prev = patcherStatsStore.get()
@@ -284,8 +284,8 @@
       /** Turn a `RemoteResult` failure into something worth reading. */
       function failureText(response) {
         var error = response === null || response === undefined ? null : response.error
-        if (error === null || error === undefined) return '切换失败'
-        if (error.code === 'session/writer-held') return error.message + '（该会话被另一个 DSH 实例占用，请先退出其它实例）'
+        if (error === null || error === undefined) return t('depth.selectFailed')
+        if (error.code === 'session/writer-held') return error.message + t('depth.sessionHeld')
         return error.message
       }
 
@@ -494,7 +494,7 @@
         // its native Provider default as an explicit first stop; selecting it
         // clears reasoningEffort instead of guessing medium/high.
         var hasProviderDefault = reasoning !== null && reasoning.defaultEffort === undefined && declaredEfforts.length > 0
-        var efforts = hasProviderDefault ? [{ id: undefined, name: '默认', providerDefault: true }].concat(declaredEfforts) : declaredEfforts
+        var efforts = hasProviderDefault ? [{ id: undefined, name: t('mode.default'), providerDefault: true }].concat(declaredEfforts) : declaredEfforts
         var colors = effortColors(efforts, config.palette)
         var triples = effortTriples(efforts, config.palette)
         var wanted = selection === null || selection === undefined ? undefined : selection.reasoningEffort

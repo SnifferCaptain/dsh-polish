@@ -120,7 +120,7 @@
       return new XMLSerializer().serializeToString(root)
     }
     var loadMermaidImpl = function () {
-      return Promise.reject(new Error('dsh-polish: 动态 chunk 加载不可用（require.async 缺失）'))
+      return Promise.reject(new Error(t('visualize.err.chunkUnavailable')))
     }
 
     /** 颜色亮度（0..1）；解析 #hex / rgb()，解析不出返回 null。 */
@@ -451,7 +451,7 @@
         if (entry.img) entry.img.style.display = diagram ? 'inline-block' : 'none'
         entry.pre.style.display = diagram ? 'none' : ''
         if (entry.toggle) {
-          entry.toggle.textContent = hasImage ? (diagram ? '代码' : '图示') : ''
+          entry.toggle.textContent = hasImage ? (diagram ? t('visualize.toggle.code') : t('visualize.toggle.diagram')) : ''
           entry.toggle.style.display = hasImage ? '' : 'none'
         }
       }
@@ -464,11 +464,11 @@
       // ---------------------------------------------------------------- payloads
       function buildSvgPayload(text) {
         var root = parseSvgImpl(text)
-        if (!root) return Promise.reject(new Error('不是合法的 SVG 文档'))
+        if (!root) return Promise.reject(new Error(t('visualize.err.invalidSvg')))
         visSanitizeSvgNode(root)
         var serialized = serializeSvgImpl(root)
         if (!serialized || String(serialized).indexOf('<svg') < 0) {
-          return Promise.reject(new Error('SVG 序列化失败'))
+          return Promise.reject(new Error(t('visualize.err.serialize')))
         }
         return Promise.resolve({
           src: visSvgToDataUrl(serialized),
@@ -484,7 +484,7 @@
           .then(function (mod) {
             var api = mod && (mod.default || mod.mermaid) || mod
             if (!api || typeof api.render !== 'function') {
-              throw new Error('Mermaid 运行时缺少 render')
+              throw new Error(t('visualize.err.mermaidNoRender'))
             }
             mermaidApi = api
             statsPatch({ mermaidState: 'ready' })
@@ -519,7 +519,7 @@
           return p.then(function (res) {
             var svg = res && typeof res === 'object' ? res.svg : res
             if (typeof svg !== 'string' || svg.indexOf('<svg') < 0) {
-              throw new Error('Mermaid 没有产出 SVG')
+              throw new Error(t('visualize.err.mermaidNoSvg'))
             }
             return { src: visSvgToDataUrl(svg), aspect: null }
           })
@@ -572,7 +572,7 @@
         var img = entry.img
         if (!img) {
           img = document.createElement('img')
-          img.setAttribute('alt', '可视化图')
+          img.setAttribute('alt', t('visualize.alt'))
           entry.frame.appendChild(img)
           entry.img = img
         }
@@ -592,8 +592,8 @@
         ensureContainer(entry)
         if (!entry.container) return
         if (entry.img) entry.img.style.display = 'none'
-        entry.statusEl.textContent = String(message || '渲染失败').slice(0, 160)
-        entry.error = String(message || '渲染失败')
+        entry.statusEl.textContent = String(message || t('visualize.err.renderFailed')).slice(0, 160)
+        entry.error = String(message || t('visualize.err.renderFailed'))
         entry.pre.style.display = ''
         refreshViewsFor(entry)
         statsPatch({ errors: visualizeStatsStore.get().errors + 1 })
@@ -625,7 +625,7 @@
           },
           function (error) {
             if (!isConnected(entry)) return
-            markError(entry, error && error.message ? String(error.message) : '渲染失败')
+            markError(entry, error && error.message ? String(error.message) : t('visualize.err.renderFailed'))
           },
         )
       }
@@ -677,7 +677,7 @@
         }
         if (!visKindEnabled(entry.kind, cfg)) return
         if (text.length > VIS_MAX_CHARS) {
-          markError(entry, '内容过大（超过 ' + VIS_MAX_CHARS + ' 字符），保留代码视图')
+          markError(entry, t('visualize.err.tooLarge', { n: VIS_MAX_CHARS }))
           return
         }
         // 已渲染过的块再变化：消耗重渲染预算，防长流式解析风暴。
@@ -895,7 +895,7 @@
         },
         resetLoadMermaid: function () {
           loadMermaidImpl = function () {
-            return Promise.reject(new Error('dsh-polish: 动态 chunk 加载不可用（require.async 缺失）'))
+            return Promise.reject(new Error(t('visualize.err.chunkUnavailable')))
           }
         },
       }

@@ -21,20 +21,20 @@
     var PROMPTS_MAX_CONTENT = 20000
     var TOOL_PROMPT_MAX = 2000
      var PROMPTS_PRESETS = [
-       { id: 'standard', label: 'standard（标准）', note: '普通 coding-agent persona' },
-       { id: 'ptc', label: 'ptc', note: 'PTC 工具呈现；persona 与 standard 相同' },
-       { id: 'cordis', label: 'cordis（创造）', note: 'Cordis / 技能 / 插件相关提示' },
-       { id: 'minimal', label: 'minimal（极简）', note: 'persona complete：自定义模板会顶替它' },
+       { id: 'standard', label: t('prompts.preset.standard'), note: t('prompts.preset.standard.note') },
+       { id: 'ptc', label: 'ptc', note: t('prompts.preset.ptc.note') },
+       { id: 'cordis', label: t('prompts.preset.cordis'), note: t('prompts.preset.cordis.note') },
+       { id: 'minimal', label: t('prompts.preset.minimal'), note: t('prompts.preset.minimal.note') },
      ]
     // 0.4.90：每个模式各自一个**内置只读**的默认提示词模板（单射：
     // mode -> builtin:<mode>）。它们是「该模式自己的 DSH 默认提示词」，
     // 不是可编辑的自定义条目，也不是笼统的一个「默认提示词模板」。
     // 每个模式的下拉默认选中它自己这一项；用户可另选自定义模板。
     var PROMPTS_BUILTINS = [
-      { id: 'builtin:standard', mode: 'standard', label: 'standard 默认模板' },
-      { id: 'builtin:ptc', mode: 'ptc', label: 'ptc 默认模板' },
-      { id: 'builtin:cordis', mode: 'cordis', label: 'cordis 默认模板' },
-      { id: 'builtin:minimal', mode: 'minimal', label: 'minimal 默认模板' },
+      { id: 'builtin:standard', mode: 'standard', label: t('prompts.builtin.standard') },
+      { id: 'builtin:ptc', mode: 'ptc', label: t('prompts.builtin.ptc') },
+      { id: 'builtin:cordis', mode: 'cordis', label: t('prompts.builtin.cordis') },
+      { id: 'builtin:minimal', mode: 'minimal', label: t('prompts.builtin.minimal') },
     ]
     function builtinLabelOf(id) {
       for (var bi = 0; bi < PROMPTS_BUILTINS.length; bi++) {
@@ -213,16 +213,16 @@
     }
 
     function promptKindTag(mode) {
-      return React.createElement('span', { className: 'dshp-tag', 'data-tone': mode === 'replace' ? 'warn' : 'accent' }, mode === 'replace' ? '整份替换' : '附加')
+      return React.createElement('span', { className: 'dshp-tag', 'data-tone': mode === 'replace' ? 'warn' : 'accent' }, mode === 'replace' ? t('prompts.tag.replace') : t('prompts.tag.append'))
     }
 
     var PROMPT_MODE_CHOICES = [
-      { value: 'append', title: '附加', desc: 'DSH 默认保留，你的文本加在前面', bar: [{ k: 'mine', w: 4 }, { k: 'base', w: 6 }] },
-      { value: 'replace', title: '整份替换', desc: '只发送你的文本，DSH 默认被丢弃', bar: [{ k: 'mine', w: 6 }, { k: 'drop', w: 4 }] },
+      { value: 'append', title: t('prompts.modeAppend.title'), desc: t('prompts.modeAppend.desc'), bar: [{ k: 'mine', w: 4 }, { k: 'base', w: 6 }] },
+      { value: 'replace', title: t('prompts.modeReplace.title'), desc: t('prompts.modeReplace.desc'), bar: [{ k: 'mine', w: 6 }, { k: 'drop', w: 4 }] },
     ]
     var TOOL_MODE_CHOICES = [
-      { value: 'append', title: '追加到原描述末尾', desc: '原描述完整保留', bar: [{ k: 'base', w: 7 }, { k: 'mine', w: 3 }] },
-      { value: 'replace', title: '整份替换原描述', desc: '原描述被丢弃，建议追加', bar: [{ k: 'drop', w: 5 }, { k: 'mine', w: 5 }] },
+      { value: 'append', title: t('prompts.toolAppend.title'), desc: t('prompts.toolAppend.desc'), bar: [{ k: 'base', w: 7 }, { k: 'mine', w: 3 }] },
+      { value: 'replace', title: t('prompts.toolReplace.title'), desc: t('prompts.toolReplace.desc'), bar: [{ k: 'drop', w: 5 }, { k: 'mine', w: 5 }] },
     ]
 
     function makePromptsRowPage(ctx) {
@@ -230,8 +230,8 @@
         {
           key: 'enabled',
           kind: 'boolean',
-          label: '启用自定义系统提示词',
-          hint: '关闭后所有会话立即恢复 DSH 默认系统提示词，无需重启；再打开时自动恢复上次的选择。',
+          label: t('prompts.enabled.label'),
+          hint: t('prompts.enabled.hint'),
         },
       ]
       return function PromptsRowPage(props) {
@@ -241,7 +241,13 @@
             'span',
             null,
             summaryFrom(form, function (value) {
-              return value.enabled === false ? '提示词设置：已停用' : '提示词设置：已启用'
+              // 与设置页其余行同一语法：状态在前，只用一个「 · 」分隔
+            var customCount = Array.isArray(value.custom) ? value.custom.length : 0
+            var parts = [value.enabled === false ? t('prompts.summary.disabled') : t('prompts.summary.enabled')]
+            if (value.enabled !== false) {
+              parts.push(customCount > 0 ? t('prompts.summary.customCount', { n: customCount }) : t('prompts.summary.builtinOnly'))
+            }
+            return parts.join(' · ')
             }),
           )
         }
@@ -419,12 +425,12 @@
         function loadToolCatalog(manual) {
           if (toolCatalogBusy.current) return
           if (manual && toolDirty) {
-            setRefreshNote('有未保存的工具提示，请先保存后再刷新目录。')
+            setRefreshNote(t('prompts.note.unsavedGuard'))
             return
           }
           toolCatalogBusy.current = true
           setRefreshing(true)
-          setRefreshNote(manual ? '正在读取工具注册表…' : '')
+          setRefreshNote(manual ? t('prompts.note.reading') : '')
           fetch('/api/dshp/prompts/tools')
             .then(function (res) {
               return res && res.ok ? res.json() : null
@@ -433,10 +439,10 @@
               if (!data || data.ok !== true || !Array.isArray(data.tools)) throw new Error('tool catalog unavailable')
               setToolCatalog(data.tools)
               setToolCatalogUpdatedAt(typeof data.updatedAt === 'number' ? data.updatedAt : Date.now())
-              setRefreshNote(manual ? '工具目录已更新。' : '')
+              setRefreshNote(manual ? t('prompts.note.updated') : '')
             })
             .catch(function () {
-              setRefreshNote('读取工具目录失败，请手动重试。')
+              setRefreshNote(t('prompts.note.readFailed'))
             })
             .then(function () {
               toolCatalogBusy.current = false
@@ -575,7 +581,7 @@
             modeFinalText = modeDefaultText
           }
         }
-        var modeFinalHint = modeFinalText.length === 0 ? '下一次模型调用后生成' : ''
+        var modeFinalHint = modeFinalText.length === 0 ? t('prompts.note.nextCall') : ''
 
         function doCopy(text) {
           if (!text || text.length === 0) return
@@ -594,14 +600,14 @@
         // 层次：分段控件（系统提示词 / 模式选择 / 工具提示）→ 各页内容。
         // 逻辑层不动：selectedPreset / active / selectActive / customs / activeMode
         // 等状态与 handler 全部沿用；只重排呈现。
-        var presetTabLabel = { standard: '标准', ptc: 'ptc', cordis: '创造', minimal: '极简' }
+        var presetTabLabel = { standard: t('prompts.tab.standard'), ptc: 'ptc', cordis: t('prompts.tab.cordis'), minimal: t('prompts.tab.minimal') }
         var presetTabs = promptSeg(
           PROMPTS_PRESETS.map(function (preset) {
             return { id: preset.id, label: presetTabLabel[preset.id] || preset.id, title: preset.label + ' — ' + preset.note }
           }),
           selectedPreset,
           setSelectedPreset,
-          '模式',
+          t('prompts.tabLabel'),
         )
         // 每个模式当前用哪份提示词：模板库的行据此标出「被谁使用」。
         var usedBy = {}
@@ -632,14 +638,14 @@
           {
             className: 'dshp-select',
             style: { flex: '1 1 auto', minWidth: 0 },
-            'aria-label': '生效提示词',
+            'aria-label': t('prompts.activeLabel'),
             value: active,
             disabled: !writable || busy,
             onChange: function (event) { selectActive(event.target.value) },
           },
           React.createElement(
             'optgroup',
-            { label: '内置默认' },
+            { label: t('prompts.builtinGroup') },
             PROMPTS_BUILTINS.map(function (b) {
               return React.createElement('option', { key: b.id, value: b.id }, b.label)
             }),
@@ -647,9 +653,9 @@
           customs.length > 0
             ? React.createElement(
                 'optgroup',
-                { label: '我的模板' },
+                { label: t('prompts.myGroup') },
                 customs.map(function (entry) {
-                  return React.createElement('option', { key: entry.id, value: entry.id }, entry.name + '（' + (customMode(entry) === 'replace' ? '替换' : '附加') + '）')
+                  return React.createElement('option', { key: entry.id, value: entry.id }, entry.name + '（' + (customMode(entry) === 'replace' ? t('prompts.customOption.replace') : t('prompts.customOption.append')) + '）')
                 }),
               )
             : null,
@@ -661,7 +667,7 @@
             templateButtons.push(
               React.createElement(
                 'button',
-                { key: tpl.key, type: 'button', className: 'dshp-btn-sm', title: '添加为自定义模板并设为该模式的提示词', disabled: !writable || busy, onClick: function () { applyTemplate(tpl) } },
+                { key: tpl.key, type: 'button', className: 'dshp-btn-sm', title: t('prompts.applyTemplate.title'), disabled: !writable || busy, onClick: function () { applyTemplate(tpl) } },
                 tpl.name,
               ),
             )
@@ -675,13 +681,13 @@
         var compLegend
         if (!activeEntry) {
           compParts = [{ k: 'base', w: baseW }]
-          compLegend = [{ k: 'base', text: 'DSH 默认' + (baseLen > 0 ? ' ' + baseLen + ' 字' : '') }]
+          compLegend = [{ k: 'base', text: t('prompts.legend.dshDefault') + (baseLen > 0 ? ' ' + baseLen + t('prompts.legend.chars') : '') }]
         } else if (activeMode === 'replace') {
           compParts = [{ k: 'mine', w: Math.max(userLen, 1) }, { k: 'drop', w: baseW }]
-          compLegend = [{ k: 'mine', text: '你的文本 ' + userLen + ' 字' }, { k: 'drop', text: 'DSH 默认（已丢弃）' }]
+          compLegend = [{ k: 'mine', text: t('prompts.legend.yourText') + ' ' + userLen + t('prompts.legend.chars') }, { k: 'drop', text: t('prompts.legend.dropped') }]
         } else {
           compParts = [{ k: 'mine', w: Math.max(userLen, 1) }, { k: 'base', w: baseW }]
-          compLegend = [{ k: 'mine', text: '你的文本 ' + userLen + ' 字' }, { k: 'base', text: 'DSH 默认' + (baseLen > 0 ? ' ' + baseLen + ' 字' : '') }]
+          compLegend = [{ k: 'mine', text: t('prompts.legend.yourText') + ' ' + userLen + t('prompts.legend.chars') }, { k: 'base', text: t('prompts.legend.dshDefault') + (baseLen > 0 ? ' ' + baseLen + t('prompts.legend.chars') : '') }]
         }
 
         // ---------------------------------------------------- 模板库
@@ -692,12 +698,12 @@
             'div',
             { key: b.id, className: 'dshp-trow' },
             React.createElement('div', { className: 'dshp-trow-name' }, React.createElement('b', null, b.label), usedByTags(b.id)),
-            React.createElement('span', { className: 'dshp-tag' }, '内置'),
-            React.createElement('span', { className: 'dshp-trow-n' }, builtinMap[b.id] ? builtinMap[b.id].text.length + ' 字符' : '未解析'),
+            React.createElement('span', { className: 'dshp-tag' }, t('prompts.builtinTag')),
+            React.createElement('span', { className: 'dshp-trow-n' }, builtinMap[b.id] ? t('prompts.chars', { len: builtinMap[b.id].text.length }) : t('common.unparsed')),
             React.createElement(
               'div',
               { className: 'dshp-trow-act' },
-              React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', onClick: function () { setBuiltinView(b.id) } }, '查看'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', onClick: function () { setBuiltinView(b.id) } }, t('common.view')),
             ),
           )
         })
@@ -707,12 +713,12 @@
             { key: entry.id, className: 'dshp-trow' },
             React.createElement('div', { className: 'dshp-trow-name' }, React.createElement('b', null, entry.name), usedByTags(entry.id)),
             promptKindTag(customMode(entry)),
-            React.createElement('span', { className: 'dshp-trow-n' }, promptTextValue(entry.content).length + ' 字符'),
+            React.createElement('span', { className: 'dshp-trow-n' }, t('prompts.chars', { len: promptTextValue(entry.content).length })),
             React.createElement(
               'div',
               { className: 'dshp-trow-act' },
-              React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', disabled: !writable || busy, onClick: function () { openEditEditor(entry) } }, '编辑'),
-              React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost dshp-btn-danger', disabled: !writable || busy, onClick: function () { removeEntry(entry) } }, '删除'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', disabled: !writable || busy, onClick: function () { openEditEditor(entry) } }, t('common.edit')),
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost dshp-btn-danger', disabled: !writable || busy, onClick: function () { removeEntry(entry) } }, t('common.delete')),
             ),
           )
         })
@@ -741,16 +747,16 @@
           editorBlock = React.createElement(
             'div',
             { className: 'dshp-card', 'data-edit': '1' },
-            React.createElement('div', { className: 'dshp-h' }, editor.id ? '编辑：' + (editor.name || '未命名') : '新建自定义提示词'),
+            React.createElement('div', { className: 'dshp-h' }, editor.id ? t('prompts.editor.editTitle') + (editor.name || t('common.unnamed')) : t('prompts.editor.newTitle')),
             React.createElement(
               'div',
               { className: 'dshp-vfield' },
               React.createElement(
                 'div',
                 { className: 'dshp-section-head' },
-                React.createElement('div', { className: 'dshp-flabel' }, '名称'),
+                React.createElement('div', { className: 'dshp-flabel' }, t('prompts.name')),
                 React.createElement('span', { className: 'dshp-spacer' }),
-                React.createElement('span', { className: 'dshp-note', style: nameTaken ? { color: 'var(--dshp-err)' } : null }, nameTaken ? '名称已存在' : editor.name.trim().length + ' / ' + PROMPTS_MAX_NAME),
+                React.createElement('span', { className: 'dshp-note', style: nameTaken ? { color: 'var(--dshp-err)' } : null }, nameTaken ? t('prompts.nameTaken') : editor.name.trim().length + ' / ' + PROMPTS_MAX_NAME),
               ),
               React.createElement('input', {
                 type: 'text',
@@ -758,7 +764,7 @@
                 style: { maxWidth: '320px' },
                 value: editor.name,
                 maxLength: PROMPTS_MAX_NAME,
-                placeholder: '例如：谨慎',
+                placeholder: t('prompts.namePlaceholder'),
                 disabled: !writable || busy,
                 onChange: function (event) { patchEditor({ name: event.target.value }) },
               }),
@@ -766,8 +772,8 @@
             React.createElement(
               'div',
               { className: 'dshp-vfield' },
-              React.createElement('div', { className: 'dshp-flabel' }, '与 DSH 默认的关系'),
-              promptChoices('模式', editor.mode === 'replace' ? 'replace' : 'append', PROMPT_MODE_CHOICES, function (v) { patchEditor({ mode: v }) }, !writable || busy),
+              React.createElement('div', { className: 'dshp-flabel' }, t('prompts.relation')),
+              promptChoices(t('prompts.mode'), editor.mode === 'replace' ? 'replace' : 'append', PROMPT_MODE_CHOICES, function (v) { patchEditor({ mode: v }) }, !writable || busy),
             ),
             React.createElement(
               'div',
@@ -775,7 +781,7 @@
               React.createElement(
                 'div',
                 { className: 'dshp-section-head' },
-                React.createElement('div', { className: 'dshp-flabel' }, '内容'),
+                React.createElement('div', { className: 'dshp-flabel' }, t('prompts.content')),
                 React.createElement('span', { className: 'dshp-spacer' }),
                 React.createElement('span', { className: 'dshp-note' }, editor.content.length + ' / ' + PROMPTS_MAX_CONTENT),
               ),
@@ -784,7 +790,7 @@
                 style: { minHeight: '180px' },
                 value: editor.content,
                 maxLength: PROMPTS_MAX_CONTENT,
-                placeholder: '例如：# 工作方式\n- 先给结论，再给依据……',
+                placeholder: t('prompts.contentPlaceholder'),
                 disabled: !writable || busy,
                 onChange: function (event) { patchEditor({ content: event.target.value }) },
               }),
@@ -795,15 +801,15 @@
               React.createElement(
                 'button',
                 { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: !writable || busy || nameInvalid || nameTaken || contentInvalid, onClick: saveEditor },
-                busy ? '保存中…' : '保存',
+                busy ? t('common.saving') : t('common.save'),
               ),
-              React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: busy, onClick: function () { setEditor(null); setSaveStatus('') } }, '取消'),
-              saveStatus === 'failed' ? React.createElement('span', { className: 'dshp-note', style: { color: 'var(--dshp-err)' } }, '保存失败：重名或超限') : null,
+              React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: busy, onClick: function () { setEditor(null); setSaveStatus('') } }, t('common.cancel')),
+              saveStatus === 'failed' ? React.createElement('span', { className: 'dshp-note', style: { color: 'var(--dshp-err)' } }, t('prompts.saveFailed')) : null,
             ),
           )
         }
 
-        var statusNote = saveStatus === 'saved' ? '已保存，立即生效。' : saveStatus === 'failed' ? '保存被拒绝，请重试。' : null
+        var statusNote = saveStatus === 'saved' ? t('prompts.savedLive') : saveStatus === 'failed' ? t('prompts.saveRejected') : null
         var statusLine = statusNote
           ? React.createElement(
               'div',
@@ -887,23 +893,23 @@
                   'div',
                   { className: 'dshp-tool-h' },
                   React.createElement('code', null, tool.name),
-                  custom ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'accent' }, '已定制') : null,
+                  custom ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'accent' }, t('prompts.customized')) : null,
                 ),
                 tool.description
                   ? React.createElement(
                       'details',
                       null,
-                      React.createElement('summary', { title: '原始描述' }, firstLine),
+                      React.createElement('summary', { title: t('prompts.originalDesc') }, firstLine),
                       React.createElement('pre', null, tool.description),
                     )
                   : null,
                 React.createElement('textarea', {
                   className: 'dshp-textarea',
                   style: { minHeight: '56px' },
-                  'aria-label': tool.name + ' 的自定义描述',
+                  'aria-label': t('prompts.customDescAria', { tool: tool.name }),
                   value: text,
                   maxLength: TOOL_PROMPT_MAX,
-                  placeholder: '留空 = 保持原描述',
+                  placeholder: t('prompts.keepDescPlaceholder'),
                   disabled: !writable || busy,
                   onChange: function (event) {
                     setToolDraft(tool.name, event.target.value)
@@ -916,13 +922,13 @@
 
         var pageTabs = promptSeg(
           [
-            { id: 'system', label: '系统提示词', title: '写和管理提示词模板' },
-            { id: 'mode', label: '模式选择', title: '每个模式用哪份提示词' },
-            { id: 'tools', label: '工具提示', title: '改工具的描述文本' },
+            { id: 'system', label: t('prompts.tabSystem'), title: t('prompts.tabSystem.title') },
+            { id: 'mode', label: t('prompts.tabMode'), title: t('prompts.tabMode.title') },
+            { id: 'tools', label: t('prompts.tabTools'), title: t('prompts.tabTools.title') },
           ],
           page,
           setPage,
-          '提示词设置',
+          t('prompts.section'),
         )
 
         // ------------------------------------------------------------ 模式选择页
@@ -939,35 +945,35 @@
               React.createElement(
                 'div',
                 { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
-                React.createElement('span', { className: 'dshp-flabel', style: { flex: '0 0 auto' } }, '生效提示词'),
+                React.createElement('span', { className: 'dshp-flabel', style: { flex: '0 0 auto' } }, t('prompts.activeLabel')),
                 activeSelect,
-                activeEntry ? promptKindTag(activeMode) : React.createElement('span', { className: 'dshp-tag' }, '内置'),
+                activeEntry ? promptKindTag(activeMode) : React.createElement('span', { className: 'dshp-tag' }, t('prompts.builtinTag')),
               ),
               promptBar(compParts, true),
               promptLegend(compLegend),
               React.createElement(
                 'div',
                 { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '4px' } },
-                React.createElement('span', { className: 'dshp-flabel', style: { flex: '0 0 auto' } }, '一键模板'),
+                React.createElement('span', { className: 'dshp-flabel', style: { flex: '0 0 auto' } }, t('prompts.quickTemplates')),
                 templateButtons,
               ),
             ),
             React.createElement(
               'div',
               { className: 'dshp-section' },
-              React.createElement('div', { className: 'dshp-h' }, '模型实际看到的'),
+              React.createElement('div', { className: 'dshp-h' }, t('prompts.previewHeading')),
               React.createElement(
                 'div',
                 { className: 'dshp-code' },
                 React.createElement(
                   'div',
                   { className: 'dshp-code-head' },
-                  React.createElement('span', null, modeFinalHint || modeFinalText.length + ' 字符 · 变量已代入'),
+                  React.createElement('span', null, modeFinalHint || t('prompts.previewChars', { len: modeFinalText.length })),
                   React.createElement('span', { className: 'dshp-spacer' }),
                   React.createElement(
                     'button',
                     { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', disabled: modeFinalText.length === 0, onClick: function () { doCopy(modeFinalText) } },
-                    copied ? '已复制' : '复制',
+                    copied ? t('common.copied') : t('common.copy'),
                   ),
                 ),
                 React.createElement(
@@ -989,27 +995,27 @@
             React.createElement(
               'div',
               { className: 'dshp-section-head' },
-              React.createElement('div', { className: 'dshp-h' }, '工具提示'),
-              React.createElement('div', { className: 'dshp-hint' }, '只改描述文本，不改参数与行为'),
+              React.createElement('div', { className: 'dshp-h' }, t('prompts.tools.heading')),
+              React.createElement('div', { className: 'dshp-hint' }, t('prompts.tools.hint')),
               refreshNote || toolCatalogUpdatedAt
                 ? React.createElement(
                     'span',
                     { className: 'dshp-note', style: { flex: '0 0 auto' } },
-                    refreshNote ? refreshNote : '快照 ' + new Date(toolCatalogUpdatedAt).toLocaleTimeString(),
+                    refreshNote ? refreshNote : t('prompts.snapshot', { time: new Date(toolCatalogUpdatedAt).toLocaleTimeString() }),
                   )
                 : null,
               React.createElement(
                 'button',
-                { type: 'button', className: 'dshp-btn-sm', disabled: refreshing, title: '重新读取全局与 preset 的工具注册表；只有手动刷新才更新', onClick: requestRefresh },
-                refreshing ? '刷新中…' : '刷新工具列表',
+                { type: 'button', className: 'dshp-btn-sm', disabled: refreshing, title: t('prompts.refresh.title'), onClick: requestRefresh },
+                refreshing ? t('common.refreshing') : t('prompts.refreshToolList'),
               ),
             ),
             React.createElement(
               'div',
               { className: 'dshp-card' },
-              promptChoices('工具提示模式', toolMode === 'replace' ? 'replace' : 'append', TOOL_MODE_CHOICES, setToolMode, !writable || busy),
+              promptChoices(t('prompts.toolMode'), toolMode === 'replace' ? 'replace' : 'append', TOOL_MODE_CHOICES, setToolMode, !writable || busy),
               toolList.length === 0
-                ? React.createElement('div', { className: 'dshp-hint' }, '工具目录为空：点击「刷新工具列表」重新读取当前注册表。')
+                ? React.createElement('div', { className: 'dshp-hint' }, t('prompts.emptyCatalog'))
                 : React.createElement('div', { className: 'dshp-list' }, toolRows),
             ),
             React.createElement(
@@ -1017,15 +1023,15 @@
               { className: 'dshp-savebar' },
               React.createElement('i', { className: 'dshp-dot', 'data-tone': toolDirty ? 'warn' : 'idle' }),
               toolDirty
-                ? React.createElement('span', { className: 'dshp-note' }, '未保存')
+                ? React.createElement('span', { className: 'dshp-note' }, t('common.unsaved'))
                 : customizedCount > 0
-                  ? React.createElement('span', { className: 'dshp-note' }, '已定制 ' + customizedCount + ' / ' + toolList.length + ' 个工具')
-                  : React.createElement('span', { className: 'dshp-note' }, '尚未定制任何工具'),
+                  ? React.createElement('span', { className: 'dshp-note' }, t('prompts.customizedCount', { n: customizedCount, total: toolList.length }))
+                  : React.createElement('span', { className: 'dshp-note' }, t('prompts.noCustomized')),
               React.createElement('span', { className: 'dshp-spacer' }),
               React.createElement(
                 'button',
                 { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: !writable || busy, onClick: saveToolPrompts },
-                '保存工具提示',
+                t('prompts.saveTools'),
               ),
             ),
             statusLine,
@@ -1044,19 +1050,19 @@
             React.createElement(
               'div',
               { className: 'dshp-lib' },
-              React.createElement('div', { className: 'dshp-lib-h' }, '内置默认', React.createElement('span', null, String(PROMPTS_BUILTINS.length))),
+              React.createElement('div', { className: 'dshp-lib-h' }, t('prompts.builtinDefault'), React.createElement('span', null, String(PROMPTS_BUILTINS.length))),
               builtinRows,
               React.createElement(
                 'div',
                 { className: 'dshp-lib-h' },
-                '我的模板',
+                t('prompts.myTemplates'),
                 React.createElement('span', null, String(customs.length)),
                 React.createElement('span', { className: 'dshp-spacer' }),
-                React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: !writable || busy, onClick: openNewEditor }, '＋ 新建'),
+                React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: !writable || busy, onClick: openNewEditor }, t('prompts.new')),
               ),
               customRows.length > 0
                 ? customRows
-                : React.createElement('div', { className: 'dshp-hint', style: { padding: '8px 0' } }, '还没有自定义模板'),
+                : React.createElement('div', { className: 'dshp-hint', style: { padding: '8px 0' } }, t('prompts.noTemplates')),
             ),
           ),
           editorBlock,
@@ -1068,17 +1074,17 @@
                   'div',
                   { className: 'dshp-code-head' },
                   React.createElement('b', { style: { fontWeight: 600, color: 'var(--dsw-alias-label-primary)' } }, builtinViewEntry.label || builtinLabelOf(builtinView)),
-                  React.createElement('span', { className: 'dshp-tag' }, '模板原文'),
-                  viewText.length > 0 ? React.createElement('span', null, viewText.length + ' 字符') : null,
+                  React.createElement('span', { className: 'dshp-tag' }, t('prompts.templateSource')),
+                  viewText.length > 0 ? React.createElement('span', null, t('prompts.viewChars', { len: viewText.length })) : null,
                   React.createElement('span', { className: 'dshp-spacer' }),
                   React.createElement(
                     'button',
                     { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', disabled: viewText.length === 0, onClick: function () { doCopy(viewText) } },
-                    copied ? '已复制' : '复制',
+                    copied ? t('common.copied') : t('common.copy'),
                   ),
-                  React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', onClick: function () { setBuiltinView(null) } }, '返回'),
+                  React.createElement('button', { type: 'button', className: 'dshp-btn-sm dshp-btn-ghost', onClick: function () { setBuiltinView(null) } }, t('common.back')),
                 ),
-                React.createElement('pre', { className: 'dshp-preview' }, viewText.length > 0 ? viewText : '未解析'),
+                React.createElement('pre', { className: 'dshp-preview' }, viewText.length > 0 ? viewText : t('common.unparsed')),
               )
             : null,
           statusLine,

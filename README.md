@@ -24,6 +24,8 @@ A collection of independently switchable enhancements for DeepSeek Harness (DSH)
 | `keep-effort` | ✔ | Remembers model reasoning effort per session and model | Depends on model-selection projections; persistence failures must not affect the main session | Maintain model-selection compatibility and fail-open behavior |
 | `session-slim` | ✔ | Summarizes an old session and creates a visible replacement | Archives the old session only after replacement visibility, model, workspace, and tool checks pass | Maintain session lifecycle and persistence compatibility |
 | `compact-model` | ✔ | Compaction uses the model the model selector currently has selected | Depends on the `llm/stream` routing waterfall, the session `modelSelection` projection, and `agentDefaultModel`; frozen call options are left untouched | Maintain compaction and model-selection compatibility |
+| `ptc-log-repair` | — | Self-heals the "PTC dispatch repeats subCallId" corruption when opening a stored session | Repairs data only (renames the reused id of the later execution, atomic write with a timestamped backup); every other corruption is rethrown untouched | Track reader-side validation changes in DSH session format |
+| `compaction-enforcer` | — | Hard threshold butler: over threshold it must compact, and if compaction cannot bring pressure under the threshold it rejects the step instead of silently sending an over-window request | Cannot fix pi-ai silent-overflow misjudgement or the 4-chars/token estimate; with a wrongly declared window the strategy is prune + reject; its `thresholdRatio` should not sit below compaction-basic's own threshold | Track agent-loop waterfall, token-meter, and compaction service contracts |
 
 ## Features
 
@@ -113,6 +115,8 @@ npm run check:client
 npm run pack:release
 ```
 
+`build:client` regenerates the UI string dictionary (`src/client/shared/i18n.js`) from `locale/*.jsonc` first, then the Host/Client entries. Do not edit the generated dictionary by hand.
+
 The command generates `release/dsh-polish-<version>.tgz`.
 
 ### Package boundary
@@ -144,6 +148,7 @@ The package declares:
 ```text
 cordis.patch.yml       Cordis bundle entry and component registrations
 src/client/            Client source
+locale/                UI string dictionaries (zh/en, JSONC source + generated JS)
 <component>/           Host entry point and package.json for each component
 scripts/               Client build scripts
 vendor/                Vendored third-party runtime input
@@ -163,14 +168,18 @@ npm run build:client
 npm run check:client
 ```
 
-Do not edit generated `lib/client.js` or `lib/client.mermaid.js` by hand.
+Do not edit generated `lib/client.js`, `lib/client.mermaid.js`, or `src/client/shared/i18n.js` by hand.
+
+### UI localization
+
+User-visible Client copy lives in `locale/zh.jsonc` and `locale/en.jsonc` (language = file name, JSONC allows comments). The build turns them into `src/client/shared/i18n.js`, a plain JS dictionary with a `t(key, {…})` helper; the Client falls back to the key's zh value, then to the key itself. Strings are translated at render time, so switching the DSH UI language updates open settings pages without a remount. Prompt template names and bodies are data, not UI copy, and stay in their original language.
 
 ### Tests
 
 Tests are kept in the private/local development checkout rather than this public Git repository. The local test baseline is:
 
 ```text
-720 checks
+807 checks
 ```
 
 When the local `test/` directory is available, run:

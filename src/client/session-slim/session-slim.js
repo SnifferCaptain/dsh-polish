@@ -37,28 +37,28 @@
     var SLIM_TESTCALL_PATH = '/api/dshp/session-slim/test-call' // 0.4.81：compact 模型真实最小调用
 
     var SLIM_PHASE_LABELS = {
-      queued: '排队中',
-      running: '处理中',
-      reading: '读取转录',
-      summarizing: '模型总结中',
-      renaming: '改名中',
-      archiving: '归档中',
-      creating: '创建新会话中',
-      'resolving-workspace': '确认工作区中',
-      seeding: '注入摘要中',
-      attaching: '挂回工作区中',
-      'renaming-new': '新会话改名中',
-      'selecting-model': '继承模型中',
-      'stopping-new-agent': '停止新 agent 中',
-      'verifying-new': '确认新会话可见中',
-      handoff: '切换后台会话中',
-      done: '完成',
-      failed: '失败',
-      cancelled: '已取消',
+      queued: t('slim.phase.queued'),
+      running: t('slim.phase.running'),
+      reading: t('slim.phase.reading'),
+      summarizing: t('slim.phase.summarizing'),
+      renaming: t('slim.phase.renaming'),
+      archiving: t('slim.phase.archiving'),
+      creating: t('slim.phase.creating'),
+      'resolving-workspace': t('slim.phase.resolving-workspace'),
+      seeding: t('slim.phase.seeding'),
+      attaching: t('slim.phase.attaching'),
+      'renaming-new': t('slim.phase.renaming-new'),
+      'selecting-model': t('slim.phase.selecting-model'),
+      'stopping-new-agent': t('slim.phase.stopping-new-agent'),
+      'verifying-new': t('slim.phase.verifying-new'),
+      handoff: t('slim.phase.handoff'),
+      done: t('slim.phase.done'),
+      failed: t('slim.phase.failed'),
+      cancelled: t('slim.phase.cancelled'),
     }
 
     function slimPhaseLabel(phase) {
-      return SLIM_PHASE_LABELS[phase] || phase || '未知'
+      return SLIM_PHASE_LABELS[phase] || phase || t('common.unknown')
     }
 
     function slimFmtBytes(value) {
@@ -110,9 +110,9 @@
     function slimElapsed(ms) {
       if (typeof ms !== 'number' || !isFinite(ms) || ms < 0) return ''
       var sec = Math.floor(ms / 1000)
-      if (sec < 60) return sec + ' 秒'
+      if (sec < 60) return t('slim.elapsed.sec', { n: sec })
       var min = Math.floor(sec / 60)
-      return min + ' 分 ' + (sec % 60) + ' 秒'
+      return t('slim.elapsed.min', { m: min, s: sec % 60 })
     }
 
     function slimPost(path, body) {
@@ -211,9 +211,9 @@
     }
 
     function slimRowStateLabel(row) {
-      if (row.running) return '进行中'
-      if (row.archived) return '已归档'
-      return row.live ? '在内存' : '冷'
+      if (row.running) return t('slim.inProgress')
+      if (row.archived) return t('slim.archived')
+      return row.live ? t('slim.inMemory') : t('slim.cold')
     }
 
     function makeSessionSlimSettingsPage(ctx) {
@@ -244,7 +244,7 @@
           function () {
             if (!ctx || !ctx.remote || !ctx.remote.session || typeof ctx.remote.session.modelCatalog !== 'function') {
               setCatalogLoading(false)
-              setCatalogError('模型目录不可用，已回退为手填' )
+              setCatalogError(t('slim.catalogUnavailable'))
               return undefined
             }
             var stopped = false
@@ -256,14 +256,14 @@
                   setCatalog(value)
                   setCatalogError('')
                 } else {
-                  setCatalogError('模型目录响应结构异常，已回退为手填。' )
+                  setCatalogError(t('slim.catalogBadShape'))
                 }
                 setCatalogLoading(false)
               },
               function (err) {
                 if (!stopped) {
                   setCatalogLoading(false)
-                  setCatalogError('模型列表读取失败：' + ((err && err.message) || err) + '（已回退为手填）。' )
+                  setCatalogError(t('slim.catalogReadFailed', { error: (err && err.message) || err }))
                 }
               },
             )
@@ -293,7 +293,7 @@
                   setModelCheck(res || { ok: true })
                 },
                 function (err) {
-                  setModelCheck({ ok: false, error: '校验请求失败：' + ((err && err.message) || err) })
+                  setModelCheck({ ok: false, error: t('slim.checkRequestFailed', { error: (err && err.message) || err }) })
                 },
               )
             }, 600)
@@ -312,16 +312,16 @@
           var model = String(draft.compactModel || '').trim()
           var effort = String(draft.compactEffort || '').trim()
           if (!provider || !model) {
-            setModelTest({ ok: false, error: '请先选择/填写 provider 和模型' })
+            setModelTest({ ok: false, error: t('slim.pickModelFirst') })
             return
           }
           setModelTest({ ok: null, busy: true })
           slimPost(SLIM_TESTCALL_PATH, { provider: provider, model: model, effort: effort }).then(
             function (res) {
-              setModelTest(res || { ok: false, error: '宿主无响应' })
+              setModelTest(res || { ok: false, error: t('slim.hostNoResponse') })
             },
             function (err) {
-              setModelTest({ ok: false, error: '测试调用请求失败：' + ((err && err.message) || err) })
+              setModelTest({ ok: false, error: t('slim.testRequestFailed', { error: (err && err.message) || err }) })
             },
           )
         }
@@ -404,13 +404,13 @@
                   var latestDone = data && Array.isArray(data.done) && data.done.length > 0 ? data.done[0] : null
                   if (latestDone && latestDone.key && latestDone.key !== lastFailureKeyRef.current) {
                     lastFailureKeyRef.current = latestDone.key
-                    if (latestDone.phase === 'failed') setActionNote('瘦身失败：' + (latestDone.error || '未知原因'))
+                    if (latestDone.phase === 'failed') setActionNote(t('slim.fail', { error: latestDone.error || t('slim.unknownReason') }))
                   }
                   setState(data)
                   setError('')
                 })
                 .catch(function (err) {
-                  if (!stopped) setError('状态读取失败：' + ((err && err.message) || err))
+                  if (!stopped) setError(t('slim.stateReadFailed', { error: (err && err.message) || err }))
                 })
             }
             poll()
@@ -466,7 +466,7 @@
 
         function requestSlim(ids, label) {
           if (!ids || ids.length === 0) {
-            clearNoteAfter(label + '：没有符合条件的会话。')
+            clearNoteAfter(label + t('slim.noMatch'))
             return
           }
           // 客户端过滤第二道防线：批量按钮可能在轮询前再次触发，不能把
@@ -478,7 +478,7 @@
              return true
            })
            if (acceptedIds.length === 0) {
-             clearNoteAfter(label + '：这些会话已经提交、排队或正在处理，没有新增任务。', 8000)
+             clearNoteAfter(label + t('slim.alreadySubmitted'), 8000)
              return
            }
            setSlimPendingIds(function (prev) {
@@ -489,14 +489,14 @@
              }
              return next
            })
-           setActionNote('正在提交 ' + acceptedIds.length + ' 个会话（' + label + '）…按钮已锁定。')
+           setActionNote(t('slim.submitting', { n: acceptedIds.length, label: label }))
           slimPost(SLIM_SLIM_PATH, { ids: acceptedIds })
              .then(function (result) {
                var queued = result && typeof result.queued === 'number' ? result.queued : acceptedIds.length
                if (queued > 0) {
-                 clearNoteAfter('已提交 ' + queued + ' 个会话（' + label + '），已进入处理队列。', 6000)
+                 clearNoteAfter(t('slim.submitted', { n: queued, label: label }), 6000)
                } else {
-                 clearNoteAfter('这些会话已在队列中或正在处理，没有新增任务。', 8000)
+                 clearNoteAfter(t('slim.alreadyQueued'), 8000)
                }
                return slimGetState().then(function (data) {
                  setState(data)
@@ -512,7 +512,7 @@
                  }
                  return next
                })
-               clearNoteAfter('入队失败：' + ((err && err.message) || err) + '；按钮已恢复，可重试。', 10000)
+               clearNoteAfter(t('slim.enqueueFailed', { error: (err && err.message) || err }), 10000)
              })
         }
 
@@ -526,10 +526,10 @@
             .then(function (data) {
               setState(data)
               setError('')
-              clearNoteAfter('已重新统计。', 4000)
+              clearNoteAfter(t('slim.recapped'), 4000)
             })
             .catch(function (err) {
-              clearNoteAfter('刷新失败：' + ((err && err.message) || err), 10000)
+              clearNoteAfter(t('slim.refreshFailed', { error: (err && err.message) || err }), 10000)
             })
             .then(function () {
               setRefreshing(false)
@@ -537,9 +537,9 @@
         }
 
         function requestStop() {
-          clearNoteAfter('已请求停止：排队的任务不再执行。', 5000)
+          clearNoteAfter(t('slim.stopRequested'), 5000)
           slimPost(SLIM_STOP_PATH, {}).catch(function (err) {
-            clearNoteAfter('停止失败：' + ((err && err.message) || err), 8000)
+            clearNoteAfter(t('slim.stopFailed', { error: (err && err.message) || err }), 8000)
           })
         }
 
@@ -558,11 +558,11 @@
           Promise.resolve(form.mutate(ops)).then(
             function (ok) {
               setSaving(false)
-              setSaveNote(ok ? '已保存。' : '保存被拒绝，请重试。')
+              setSaveNote(ok ? t('slim.saved') : t('slim.saveRejectedMsg'))
             },
             function () {
               setSaving(false)
-              setSaveNote('保存被拒绝，请重试。')
+              setSaveNote(t('slim.saveRejectedMsg'))
             },
           )
         }
@@ -638,11 +638,11 @@
           'tr',
           null,
           [
-            ['会话', false, undefined],
-            ['事件', true, '主会话 + 子代理合计；细条 = 相对筛选阈值，满条 = 命中'],
-            ['上下文', true, '当前上下文 / 模型窗口；细条 = 占用比例'],
-            ['默认模型', false, '未指定 compact 模型时用这个'],
-            ['状态', false, undefined],
+            [t('slim.col.sessions'), false, undefined],
+            [t('slim.col.events'), true, t('slim.col.events.hint')],
+            [t('slim.col.context'), true, t('slim.col.context.hint')],
+            [t('slim.col.model'), false, t('slim.col.model.hint')],
+            [t('slim.col.status'), false, undefined],
             ['', true, undefined],
           ].map(function (col, i) {
             return React.createElement('th', { key: i, 'data-r': col[1] ? '1' : undefined, title: col[2] }, col[0])
@@ -656,18 +656,18 @@
           var isCurrent = !!(currentJob && currentJob.sessionId === row.id)
           var isPending = !!slimPendingIds[row.id]
           var nameTitle = (row.cwd ? row.cwd + ' — ' : '') + (row.title || row.id)
-          var buttonLabel = isPending ? '提交中…' : inQueue ? '已入队' : isCurrent || row.running ? '处理中…' : '瘦身'
+          var buttonLabel = isPending ? t('slim.queueSubmitting') : inQueue ? t('slim.queueQueued') : isCurrent || row.running ? t('slim.queueRunning') + '…' : t('slim.action')
           var buttonDisabled = row.running || inQueue || isCurrent || isPending
           var ctxPct = typeof row.ctxTokens === 'number' && typeof row.ctxWindow === 'number' && row.ctxWindow > 0 ? (row.ctxTokens / row.ctxWindow) * 100 : null
           var ctxTone = ctxPct === null ? 'idle' : ctxPct >= 100 ? 'err' : ctxPct >= 70 ? 'warn' : 'ok'
           var st = isCurrent
-            ? { tone: 'warn', text: '处理中', pulse: true }
+            ? { tone: 'warn', text: t('slim.queueRunning'), pulse: true }
             : row.running
               ? { tone: 'warn', text: slimRowStateLabel(row), pulse: true }
               : inQueue
-                ? { tone: 'accent', text: '已入队' }
+                ? { tone: 'accent', text: t('slim.queueQueued') }
                 : isPending
-                  ? { tone: 'accent', text: '提交中' }
+                  ? { tone: 'accent', text: t('slim.queueSubmitting') }
                   : row.archived
                     ? { tone: 'idle', text: slimRowStateLabel(row) }
                     : row.live
@@ -676,7 +676,7 @@
           var sub =
             slimProjectName(row) +
             ' · ' + slimFmtBytes(row.fileBytes) +
-            (typeof row.subCount === 'number' && row.subCount > 0 ? ' · 含 ' + row.subCount + ' 个子代理' : '')
+            (typeof row.subCount === 'number' && row.subCount > 0 ? t('slim.subAgents', { n: row.subCount }) : '')
           return React.createElement(
             'tr',
             { key: row.id, 'data-hot': hot ? '1' : undefined, 'data-dim': row.archived ? '1' : undefined },
@@ -688,13 +688,13 @@
             ),
             React.createElement(
               'td',
-              { 'data-r': '1', title: '事件数 ' + slimFmtInt(row.events) + (hot ? ' ≥ 阈值 ' + slimFmtInt(minEvents) : ' < 阈值 ' + slimFmtInt(minEvents)) },
+              { 'data-r': '1', title: t('slim.eventsOf', { n: slimFmtInt(row.events) }) + (hot ? t('slim.aboveThreshold', { n: slimFmtInt(minEvents) }) : t('slim.belowThreshold', { n: slimFmtInt(minEvents) })) },
               React.createElement('div', { className: 'dshp-num' }, slimFmtInt(row.events)),
               slimMeter(hot ? 'accent' : 'idle', (row.events / minEvents) * 100),
             ),
             React.createElement(
               'td',
-              { 'data-r': '1', title: typeof row.ctxTokens === 'number' ? '上下文 ' + row.ctxTokens + ' tokens' + (typeof row.ctxWindow === 'number' ? ' / 窗口 ' + row.ctxWindow : '') : '上下文' },
+              { 'data-r': '1', title: typeof row.ctxTokens === 'number' ? t('slim.contextOf', { n: row.ctxTokens }) + (typeof row.ctxWindow === 'number' ? t('slim.contextWindow', { n: row.ctxWindow }) : '') : t('slim.contextLabel') },
               ctxPct === null
                 ? React.createElement('div', { className: 'dshp-num' }, slimCtxLabel(row))
                 : React.createElement(
@@ -740,10 +740,10 @@
                       type: 'button',
                       className: 'dshp-btn-sm',
                       onClick: function () {
-                        requestSlim([row.id], '单个会话')
+                        requestSlim([row.id], t('slim.single'))
                       },
                     },
-                    '瘦身',
+                    t('slim.action'),
                   ),
             ),
           )
@@ -761,9 +761,9 @@
             React.createElement(
               'div',
               { className: 'dshp-section-head' },
-              React.createElement('div', { className: 'dshp-flabel' }, '系统内存'),
+              React.createElement('div', { className: 'dshp-flabel' }, t('slim.systemMemory')),
               React.createElement('span', { className: 'dshp-spacer' }),
-              React.createElement('span', { className: 'dshp-note' }, '总 ' + slimFmtBytes(mem.total) + ' · 已用 ' + slimFmtBytes(mem.used)),
+              React.createElement('span', { className: 'dshp-note' }, t('slim.memTotal', { total: slimFmtBytes(mem.total), used: slimFmtBytes(mem.used) })),
             ),
             React.createElement(
               'div',
@@ -773,9 +773,9 @@
               React.createElement('i', { 'data-k': 'base', style: { flex: freePct + ' 1 0' } }),
             ),
             promptLegend([
-              { k: 'mine', text: 'DSH 进程 ' + slimFmtBytes(mem.rss) + '（pid ' + mem.pid + '）' },
-              { k: 'used', text: '其余已用 ' + slimFmtBytes(Math.max(0, mem.used - mem.rss)) },
-              { k: 'base', text: '空闲 ' + slimFmtBytes(mem.free) },
+              { k: 'mine', text: t('slim.memDsh', { rss: slimFmtBytes(mem.rss), pid: mem.pid }) },
+              { k: 'used', text: t('slim.memOther', { n: slimFmtBytes(Math.max(0, mem.used - mem.rss)) }) },
+              { k: 'base', text: t('slim.memFree', { n: slimFmtBytes(mem.free) }) },
             ]),
           )
         }
@@ -796,23 +796,23 @@
           var okJob = job.phase === 'done'
           var fullDetail = ''
           if (okJob && job.detail) {
-            fullDetail = '新会话 ' + (job.detail.newSessionId ? String(job.detail.newSessionId) : '?') + '，旧会话归档为 ' + (job.detail.archiveTitle || '?')
-            if (typeof job.detail.summaryChars === 'number') fullDetail += '，摘要 ' + job.detail.summaryChars + ' 字符'
-            if (typeof job.detail.archivedSubagents === 'number' && job.detail.archivedSubagents > 0) fullDetail += '，连带归档子代理 ' + job.detail.archivedSubagents
-            if (job.detail.modelInherited) fullDetail += '，已继承模型'
+            fullDetail = t('slim.doneNewSession', { newId: job.detail.newSessionId ? String(job.detail.newSessionId) : '?', archive: job.detail.archiveTitle || '?' })
+            if (typeof job.detail.summaryChars === 'number') fullDetail += t('slim.doneSummaryChars', { n: job.detail.summaryChars })
+            if (typeof job.detail.archivedSubagents === 'number' && job.detail.archivedSubagents > 0) fullDetail += t('slim.doneSubagents', { n: job.detail.archivedSubagents })
+            if (job.detail.modelInherited) fullDetail += t('slim.doneModelInherited')
             if (typeof job.detail.toolCountAfter === 'number' && job.detail.toolCountAfter >= 0) {
               fullDetail +=
-                '，模式 ' + (job.detail.presetMounted || '未指定') + ' 工具 ' + job.detail.toolCountBefore + ' → ' + job.detail.toolCountAfter
+                t('slim.donePreset', { preset: job.detail.presetMounted || t('slim.doneUnspecified'), before: job.detail.toolCountBefore, after: job.detail.toolCountAfter })
             }
           } else {
-            fullDetail = job.error || '未知原因'
+            fullDetail = job.error || t('slim.unknownReason')
           }
-          if (Array.isArray(job.warnings) && job.warnings.length > 0) fullDetail += '；警告：' + job.warnings.join('；')
+          if (Array.isArray(job.warnings) && job.warnings.length > 0) fullDetail += t('slim.doneWarnings') + job.warnings.join('；')
           if (job.errorCode) fullDetail += '（' + job.errorCode + '）'
           // 0.4.84：完成项一行结果（全文进 tooltip）；失败项原因完整换行显示。
           var shortDetail =
             okJob && job.detail
-              ? '归档为 ' + (job.detail.archiveTitle || '?') + ' · 新会话 ' + (job.detail.newSessionId ? String(job.detail.newSessionId).slice(0, 8) : '?')
+              ? t('slim.doneShort', { archive: job.detail.archiveTitle || '?', newId: job.detail.newSessionId ? String(job.detail.newSessionId).slice(0, 8) : '?' })
               : fullDetail
           return React.createElement(
             'div',
@@ -845,11 +845,11 @@
           }
           var checkTag =
             modelCheck && modelCheck.skipped
-              ? React.createElement('span', null, '未设置：各会话用各自的模型')
+              ? React.createElement('span', null, t('slim.noModelSet'))
               : modelCheck && modelCheck.ok !== false
-                ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'ok' }, '✓ 模型可用')
+                ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'ok' }, t('slim.modelOk'))
                 : modelCheck
-                  ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'err' }, '✗ 模型不可用')
+                  ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'err' }, t('slim.modelError', { error: '' }))
                   : null
           settingsCard = React.createElement(
             'div',
@@ -857,25 +857,25 @@
             React.createElement(
               'div',
               { className: 'dshp-section-head' },
-              React.createElement('div', { className: 'dshp-h' }, '瘦身设置'),
+              React.createElement('div', { className: 'dshp-h' }, t('slim.settings')),
               saveNote ? React.createElement('span', { className: 'dshp-note' }, saveNote) : null,
               React.createElement('span', { className: 'dshp-spacer' }),
-              React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: saveSettings, disabled: saving }, saving ? '保存中…' : '保存设置'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: saveSettings, disabled: saving }, saving ? t('common.saving') : t('slim.saveSettings')),
             ),
-            React.createElement('div', { className: 'dshp-gh', style: { margin: '2px 0 0' } }, '筛选', React.createElement('span', null, '按事件数；子代理折叠进父会话')),
+            React.createElement('div', { className: 'dshp-gh', style: { margin: '2px 0 0' } }, t('slim.filterTitle'), React.createElement('span', null, t('slim.filter'))),
             React.createElement(
               'div',
               { className: 'dshp-grid' },
               field(
-                '事件数 ≥',
+                t('slim.minEvents'),
                 React.createElement('input', { type: 'number', min: '1', className: 'dshp-number', style: { width: '100%' }, value: draft.minEvents, onChange: function (e) { setDraft(function (d) { return Object.assign({}, d, { minEvents: e.target.value }) }) } }),
               ),
               field(
-                '批量大小',
+                t('slim.batchSize'),
                 React.createElement('input', { type: 'number', min: '1', max: '10', className: 'dshp-number', style: { width: '100%' }, value: draft.batchSize, onChange: function (e) { setDraft(function (d) { return Object.assign({}, d, { batchSize: e.target.value }) }) } }),
               ),
             ),
-            React.createElement('div', { className: 'dshp-gh', style: { margin: '8px 0 0' }, title: '改完即生效，与「测试调用」同一条路线' }, '压缩模型', checkTag),
+            React.createElement('div', { className: 'dshp-gh', style: { margin: '8px 0 0' }, title: t('slim.compactModel.hint') }, t('slim.compactModel'), checkTag),
             catalog
               ? (function () {
                   var groups = Array.isArray(catalog.groups) ? catalog.groups : []
@@ -915,33 +915,33 @@
                     'div',
                     { className: 'dshp-grid' },
                     field(
-                      'provider',
+                      t('slim.provider'),
                       React.createElement(
                         'select',
                         { className: 'dshp-select', style: selectStyle, value: selP, onChange: function (e) { setCompact(e.target.value, '', '') } },
-                        React.createElement('option', { value: '' }, '留空 = 继承各会话自身'),
+                        React.createElement('option', { value: '' }, t('slim.inheritSelf')),
                         providers.map(function (pv) {
                           return React.createElement('option', { key: pv.id, value: pv.id }, pv.name !== pv.id ? pv.name + '（' + pv.id + '）' : pv.id)
                         }),
                       ),
                     ),
                     field(
-                      '模型名',
+                      t('slim.modelName'),
                       React.createElement(
                         'select',
                         { className: 'dshp-select', style: selectStyle, value: selM, onChange: function (e) { setCompact(selP, e.target.value, '') } },
-                        React.createElement('option', { value: '' }, '留空 = 继承'),
+                        React.createElement('option', { value: '' }, t('slim.modelInherit')),
                         (curGroup || selM ? modelOpts : []).map(function (mo) {
                           return React.createElement('option', { key: mo.id, value: mo.id }, mo.id)
                         }),
                       ),
                     ),
                     field(
-                      'effort',
+                      t('slim.effort'),
                       React.createElement(
                         'select',
                         { className: 'dshp-select', style: selectStyle, value: selE, onChange: function (e) { setCompact(selP, selM, e.target.value) } },
-                        React.createElement('option', { value: '' }, '留空 = 继承 / 提供方默认'),
+                        React.createElement('option', { value: '' }, t('slim.effortInherit')),
                         effortOpts.map(function (eo) {
                           if (!eo || !eo.id) return null
                           var name = eo.name ? eo.name + '（' : ''
@@ -955,29 +955,29 @@
                   'div',
                   { className: 'dshp-vfield' },
                   catalogLoading
-                    ? React.createElement('div', { className: 'dshp-hint' }, '模型列表加载中…')
+                    ? React.createElement('div', { className: 'dshp-hint' }, t('slim.modelListLoading'))
                     : catalogError
                       ? callout('warn', catalogError)
                       : null,
                   React.createElement(
                     'div',
                     { className: 'dshp-grid' },
-                    field('provider', React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '留空 = 继承', value: draft.compactProvider, onChange: function (e) { setCompact(e.target.value, draft.compactModel, draft.compactEffort) } })),
-                    field('模型名', React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '留空 = 继承', value: draft.compactModel, onChange: function (e) { setCompact(draft.compactProvider, e.target.value, draft.compactEffort) } })),
-                    field('effort', React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: '如 high / max，留空 = 继承', value: draft.compactEffort, onChange: function (e) { setCompact(draft.compactProvider, draft.compactModel, e.target.value) } })),
+                    field(t('slim.provider'), React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: t('slim.modelInherit'), value: draft.compactProvider, onChange: function (e) { setCompact(e.target.value, draft.compactModel, draft.compactEffort) } })),
+                    field(t('slim.modelName'), React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: t('slim.modelInherit'), value: draft.compactModel, onChange: function (e) { setCompact(draft.compactProvider, e.target.value, draft.compactEffort) } })),
+                    field(t('slim.effort'), React.createElement('input', { type: 'text', className: 'dshp-text-input', placeholder: t('slim.effortPlaceholder'), value: draft.compactEffort, onChange: function (e) { setCompact(draft.compactProvider, draft.compactModel, e.target.value) } })),
                   ),
                 ),
-            modelCheck && modelCheck.ok === false ? callout('err', '✗ ' + (modelCheck.error || '模型不可用')) : null,
+            modelCheck && modelCheck.ok === false ? callout('err', t('slim.modelErrorDetail', { error: modelCheck.error || '' })) : null,
             // 0.4.81：测试调用（真实最小请求；空文本/失败时给出 provider 真实原因）
             React.createElement(
               'div',
               { className: 'dshp-footer' },
-              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: !!(modelTest && modelTest.busy), onClick: runModelTest }, modelTest && modelTest.busy ? '测试中…' : '测试调用'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', disabled: !!(modelTest && modelTest.busy), onClick: runModelTest }, modelTest && modelTest.busy ? t('slim.testing') : t('slim.testCall')),
               modelTest && !modelTest.busy && modelTest.ok
-                ? React.createElement('span', { className: 'dshp-note' }, '✓ 测试调用成功：' + (modelTest.text || '（空）') + '（usage: ' + (modelTest.usage || '无') + '）')
+                ? React.createElement('span', { className: 'dshp-note' }, t('slim.testOk', { text: modelTest.text || '', usage: modelTest.usage || '' }))
                 : null,
             ),
-            modelTest && !modelTest.busy && !modelTest.ok ? callout('err', '✗ 测试调用失败：' + (modelTest.error || '未知')) : null,
+            modelTest && !modelTest.busy && !modelTest.ok ? callout('err', t('slim.testCallFailed', { error: modelTest.error || '' })) : null,
           )
         }
 
@@ -988,8 +988,8 @@
           React.createElement(
             'div',
             { className: 'dshp-vfield', style: { gap: '2px' } },
-            React.createElement('h3', { className: 'dshp-title' }, '会话瘦身'),
-            React.createElement('div', { className: 'dshp-hint' }, '把长会话压成 checkpoint 建新会话，旧会话改名归档。'),
+            React.createElement('h3', { className: 'dshp-title' }, t('slim.title')),
+            React.createElement('div', { className: 'dshp-hint' }, t('slim.subtitle')),
           ),
           settingsCard,
           error ? callout('err', error) : null,
@@ -999,15 +999,15 @@
             React.createElement(
               'div',
               { className: 'dshp-toolbar' },
-              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', onClick: requestRefresh, disabled: refreshing }, refreshing ? '统计中…' : '刷新统计'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn-sm', onClick: requestRefresh, disabled: refreshing }, refreshing ? t('slim.statsRunning') : t('slim.refreshStats')),
               React.createElement(
                 'label',
                 { className: 'dshp-check' },
                 React.createElement('input', { type: 'checkbox', checked: showArchived, onChange: function (e) { setShowArchived(e.target.checked) } }),
-                '显示已归档',
+                t('slim.showArchived'),
               ),
               React.createElement('span', { className: 'dshp-spacer' }),
-              React.createElement('span', { className: 'dshp-note' }, '上次统计 ' + lastAt),
+              React.createElement('span', { className: 'dshp-note' }, t('slim.lastStatsAt', { at: lastAt })),
             ),
             React.createElement(
               'div',
@@ -1032,16 +1032,16 @@
                   null,
                   bodyRows.length > 0
                     ? bodyRows
-                    : React.createElement('tr', null, React.createElement('td', { colSpan: 6, style: { padding: '18px', textAlign: 'center', color: 'var(--dsw-alias-label-tertiary)' } }, '暂无会话数据')),
+                    : React.createElement('tr', null, React.createElement('td', { colSpan: 6, style: { padding: '18px', textAlign: 'center', color: 'var(--dsw-alias-label-tertiary)' } }, t('slim.noData'))),
                 ),
               ),
             ),
             React.createElement(
               'div',
               { className: 'dshp-footer' },
-              React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: eligibleIds.length === 0, onClick: function () { requestSlim(eligibleIds, '筛选命中') } }, '批量瘦身 · 筛选 ' + eligibleIds.length + ' 个'),
-              React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: idleIds.length === 0, onClick: function () { requestSlim(idleIds, '全部非进行中') } }, '批量瘦身 · 全部 ' + idleIds.length + ' 个'),
-              React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-ghost dshp-btn-danger', disabled: queue.length === 0 && !(state && state.busy), onClick: requestStop }, '停止队列'),
+              React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: eligibleIds.length === 0, onClick: function () { requestSlim(eligibleIds, t('slim.batchMatched')) } }, t('slim.batchEligible', { n: eligibleIds.length })),
+              React.createElement('button', { type: 'button', className: 'dshp-btn', disabled: idleIds.length === 0, onClick: function () { requestSlim(idleIds, t('slim.batchAllIdle')) } }, t('slim.batchIdle', { n: idleIds.length })),
+              React.createElement('button', { type: 'button', className: 'dshp-btn dshp-btn-ghost dshp-btn-danger', disabled: queue.length === 0 && !(state && state.busy), onClick: requestStop }, t('slim.stopQueue')),
               actionNote ? React.createElement('span', { className: 'dshp-note' }, actionNote) : null,
             ),
           ),
@@ -1051,8 +1051,8 @@
             React.createElement(
               'div',
               { className: 'dshp-section-head' },
-              React.createElement('div', { className: 'dshp-h' }, '处理队列'),
-              queueCount > 0 ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'warn' }, queueCount + ' 个任务') : null,
+              React.createElement('div', { className: 'dshp-h' }, t('slim.queue')),
+              queueCount > 0 ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'warn' }, t('slim.queueCount', { n: queueCount })) : null,
             ),
             currentJob
               ? React.createElement(
@@ -1072,10 +1072,10 @@
                 )
               : null,
             !currentJob && queue.length === 0
-              ? React.createElement('div', { className: 'dshp-hint' }, state && state.busy ? 'worker 唤醒中…' : '队列空闲')
+              ? React.createElement('div', { className: 'dshp-hint' }, state && state.busy ? t('slim.queueWaking') : t('slim.queueIdle'))
               : null,
             queueRows,
-            done.length > 0 ? React.createElement('div', { className: 'dshp-lib-h', style: { margin: '6px 0 0' } }, '已完成', React.createElement('span', null, String(Math.min(done.length, 20)))) : null,
+            done.length > 0 ? React.createElement('div', { className: 'dshp-lib-h', style: { margin: '6px 0 0' } }, t('slim.doneHeading'), React.createElement('span', null, String(Math.min(done.length, 20)))) : null,
             doneRows,
           ),
           memoryBar,

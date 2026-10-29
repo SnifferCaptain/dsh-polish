@@ -24,6 +24,8 @@ DSH 的一组可独立开关的增强组件。组件以一个 Cordis bundle 发�
 | `keep-effort` | ✔ | 记住会话的模型推理强度 | 依赖模型选择投影；持久化失败不能影响主会话 | 维护模型选择兼容和失败回滚 |
 | `session-slim` | ✔ | 总结旧会话并创建可见的新会话 | 只有 replacement 完成可见性、模型、工作区和工具检查后才归档旧会话 | 维护会话生命周期和持久化兼容性 |
 | `compact-model` | ✔ | 压缩摘要使用模型选择器当前选中的模型 | 依赖 `llm/stream` routing 瀑布、会话 `modelSelection` 投影和 `agentDefaultModel`；调用 options 被冻结时保持原样 | 维护压缩与模型选择兼容性 |
+| `ptc-log-repair` | — | 打开历史报「PTC dispatch repeats subCallId」时自愈日志 | 只修数据（后一次执行占用的 id 整组改名，原子写 + 时间戳备份）；其他损坏原样抛出 | 跟踪 DSH 会话格式读端校验变化 |
+| `compaction-enforcer` | — | 压缩硬阈值管家：到阈值必须压；压不动就 reject 本轮，不静默发超大请求 | 改不了 pi-ai 的 silent-overflow 误判和 4 字符/token 估算；声明窗口错误时策略是剪枝 + reject；thresholdRatio 不应低于内置 compaction-basic 的阈值 | 跟踪 agent-loop 瀑布、token-meter、compaction 服务契约 |
 
 ## 功能说明
 
@@ -115,6 +117,8 @@ npm run pack:release
 
 命令会生成 `release/dsh-polish-<version>.tgz`。
 
+`build:client` 会先由 `locale/*.jsonc` 重新生成 UI 词条字典（`src/client/shared/i18n.js`），再生成 Host/Client 入口；不要手工编辑生成的字典。
+
 ### 发布包边界
 
 npm 包使用 `package.json` 的 `files` 白名单，而不是把整个仓库打进去。包内只保留运行时需要的内容：Host / Client 构建产物、组件 Host 入口、`cordis.patch.yml`、随包发布的 skills 和两个 README。
@@ -144,6 +148,7 @@ npm 包使用 `package.json` 的 `files` 白名单，而不是把整个仓库打
 ```text
 cordis.patch.yml       Cordis bundle 入口和组件注册
 src/client/            Client 源码
+locale/                UI 词条字典（zh/en，JSONC 源 + 生成的 JS）
 <component>/           各组件的 Host 入口和 package.json
 scripts/               Client 构建脚本
 vendor/                vendored 的第三方运行时输入
@@ -163,14 +168,18 @@ npm run build:client
 npm run check:client
 ```
 
-不要直接手工编辑生成的 `lib/client.js` 或 `lib/client.mermaid.js`。
+不要直接手工编辑生成的 `lib/client.js`、`lib/client.mermaid.js` 或 `src/client/shared/i18n.js`。
+
+### UI 词条化
+
+用户可见的 Client 文案集中在 `locale/zh.jsonc` 与 `locale/en.jsonc`（语言 = 文件名，JSONC 允许注释）。构建时生成 `src/client/shared/i18n.js`（纯 JS 字典 + `t(key, {…})`），缺失键回退 zh，再回退 key 本身。词条在渲染期解析，因此在 DSH 里切换界面语言后，已打开的设置页文案实时切换、无需重挂。提示词模板名与正文属于数据而非 UI 文案，保持原语言。
 
 ### 测试
 
 测试保留在本地开发 checkout 中，不进入公开 Git 仓库。当前本地基线为：
 
 ```text
-720 checks
+807 checks
 ```
 
 本地存在 `test/` 目录时执行：

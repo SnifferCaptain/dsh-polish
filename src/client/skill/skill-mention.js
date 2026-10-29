@@ -550,6 +550,13 @@ function makeSkillMentionPicker(child) {
         document.removeEventListener('keydown', onKeyDown, true)
         document.removeEventListener('focusin', onFocusIn, true)
       }
+      // 键盘移动会把高亮推到可视区之外（菜单最高 280px、最多 12 条）
+      // ——每次选中项变化后把它滚进视野，block:'nearest' 不会拖动整页。
+      try {
+        var menuEl = document.querySelector('.dshp-skill-mention-menu')
+        var activeEl = menuEl ? menuEl.querySelector('[aria-selected="true"]') : null
+        if (activeEl && typeof activeEl.scrollIntoView === 'function') activeEl.scrollIntoView({ block: 'nearest' })
+      } catch (error) {}
     }, [view, catalog, selectedIndex, inputActions])
 
     if (!view) return null
@@ -605,7 +612,11 @@ function makeSkillMentionPicker(child) {
               padding: '8px 10px',
               cursor: 'pointer',
               color: 'inherit',
-              background: active ? 'var(--dsw-alias-bg-layer-2, rgba(128,128,128,.12))' : 'transparent',
+              // 键盘高亮用强调色淡底 + 左侧竖条：与设置页的「你选中的那个」同一套语汇
+              background: active
+                ? 'color-mix(in srgb, var(--dsw-alias-state-business-primary, #3b82f6) 14%, transparent)'
+                : 'transparent',
+              boxShadow: active ? 'inset 2px 0 0 var(--dsw-alias-state-business-primary, #3b82f6)' : 'none',
             },
           },
           React.createElement('div', { style: { fontSize: '13px', fontWeight: 600 } }, '$' + skill.name),

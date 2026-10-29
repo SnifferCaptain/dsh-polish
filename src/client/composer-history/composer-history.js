@@ -309,12 +309,12 @@
             function (page) {
               delete fetching[sessionId]
               cache[sessionId] = page
-              setHistoryStats({ lastCount: page.list.length, lastError: page.list.length > 0 ? '' : '未找到用户消息' })
+              setHistoryStats({ lastCount: page.list.length, lastError: page.list.length > 0 ? '' : t('history.err.noUserMessages') })
               return page.list
             },
             function () {
               delete fetching[sessionId]
-              setHistoryStats({ lastError: '读取会话历史失败' })
+              setHistoryStats({ lastError: t('history.err.readFailed') })
               return []
             },
           )
@@ -370,7 +370,7 @@
           },
           function () {
             h.deep = null
-            setHistoryStats({ lastError: '读取更早的历史失败' })
+            setHistoryStats({ lastError: t('history.err.readOlderFailed') })
             return 0
           },
         )

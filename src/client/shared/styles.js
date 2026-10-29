@@ -77,11 +77,13 @@
       '.dshp-vfield { display: flex; flex-direction: column; gap: 6px; }',
       '.dshp-flabel { color: var(--dshp-muted); font-size: 12px; line-height: 18px; }',
       /* chips, dots, status */
+      /* 标签文字混入当前主题的 label-primary：浅色下压暗、深色下提亮，
+         11px 小字才不会在淡底上糊成一片 */
       '.dshp-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; line-height: 18px; padding: 0 7px; border-radius: 9px; background: var(--dsw-alias-bg-layer-2); color: var(--dshp-muted); white-space: nowrap; flex: 0 0 auto; }',
-      '.dshp-tag[data-tone="accent"] { background: color-mix(in srgb, var(--dshp-accent) 16%, transparent); color: var(--dshp-accent); }',
-      '.dshp-tag[data-tone="warn"] { background: color-mix(in srgb, var(--dshp-warn) 16%, transparent); color: var(--dshp-warn); }',
-      '.dshp-tag[data-tone="ok"] { background: color-mix(in srgb, var(--dshp-ok) 16%, transparent); color: var(--dshp-ok); }',
-      '.dshp-tag[data-tone="err"] { background: color-mix(in srgb, var(--dshp-err) 16%, transparent); color: var(--dshp-err); }',
+      '.dshp-tag[data-tone="accent"] { background: color-mix(in srgb, var(--dshp-accent) 16%, transparent); color: color-mix(in srgb, var(--dshp-accent) 72%, var(--dsw-alias-label-primary)); }',
+      '.dshp-tag[data-tone="warn"] { background: color-mix(in srgb, var(--dshp-warn) 16%, transparent); color: color-mix(in srgb, var(--dshp-warn) 72%, var(--dsw-alias-label-primary)); }',
+      '.dshp-tag[data-tone="ok"] { background: color-mix(in srgb, var(--dshp-ok) 16%, transparent); color: color-mix(in srgb, var(--dshp-ok) 72%, var(--dsw-alias-label-primary)); }',
+      '.dshp-tag[data-tone="err"] { background: color-mix(in srgb, var(--dshp-err) 16%, transparent); color: color-mix(in srgb, var(--dshp-err) 72%, var(--dsw-alias-label-primary)); }',
       '.dshp-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dshp-faint); flex: 0 0 auto; }',
       '.dshp-dot[data-tone="ok"] { background: var(--dshp-ok); }',
       '.dshp-dot[data-tone="warn"] { background: var(--dshp-warn); }',
@@ -178,11 +180,13 @@
       '.dshp-textarea { box-sizing: border-box; width: 100%; min-height: 56px; padding: 8px 10px; border-radius: 8px; border: .5px solid var(--dshp-line); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }',
       '.dshp-textarea::placeholder { color: var(--dshp-faint); }',
       '.dshp-textarea:focus { outline: none; border-color: var(--dsw-alias-border-l2); }',
-      '.dshp-switch { position: relative; flex: 0 0 auto; width: 40px; height: 22px; padding: 0; border: none; border-radius: 11px; background: var(--dsw-alias-border-l2); cursor: pointer; transition: background .15s ease; }',
-      '.dshp-switch[aria-checked="true"] { background: var(--dsw-alias-button-primary-fill); }',
+      '.dshp-switch { position: relative; flex: 0 0 auto; width: 36px; height: 20px; padding: 0; border: none; border-radius: 999px; background: var(--dsw-alias-border-l3); cursor: pointer; transition: background .15s ease; }',
+      /* 与宿主原生开关逐条对齐：开态轨道 brand-primary、滑块 label-primary-foreground（深色主题下轨道是白的、滑块必须反色，否则「开」看起来像「关」） */
+      '.dshp-switch[aria-checked="true"] { background: var(--dsw-alias-brand-primary); }',
       '.dshp-switch:disabled { opacity: .5; cursor: default; }',
-      '.dshp-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--dsw-alias-switch-thumb); transition: transform .15s ease; }',
-      '.dshp-switch[aria-checked="true"] .dshp-knob { transform: translateX(18px); }',
+      '.dshp-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--dsw-alias-label-primary-foreground); transition: transform .15s ease; }',
+      '.dshp-switch[aria-checked="false"] .dshp-knob { background: var(--dsw-alias-switch-thumb); }',
+      '.dshp-switch[aria-checked="true"] .dshp-knob { transform: translateX(16px); }',
       '.dshp-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }',
       '.dshp-savebar { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); font-size: 12px; line-height: 18px; color: var(--dshp-muted); }',
       '.dshp-savebar > .dshp-spacer { flex: 1 1 auto; }',
@@ -232,5 +236,11 @@
       '.dshp-jobrow > .dshp-num { margin-left: auto; font-size: 12px; color: var(--dshp-faint); }',
       '.dshp-comp > i[data-k="used"] { background: var(--dshp-warn); }',
       '.dshp-legend i[data-k="used"] { background: var(--dshp-warn); }',
+      /* 尊重系统「减少动态效果」：这里的所有动效都是装饰性的，不该抢注意力 */
+      '@media (prefers-reduced-motion: reduce) {',
+      '  .dshp-dot[data-pulse="1"], .dshp-meter[data-busy="1"] > i { animation: none; }',
+      '  .dshp-comp > i, .dshp-meter > i, .dshp-switch, .dshp-knob, .dshp-seg-item, .dshp-choice { transition: none; }',
+      '  .dshp-tool summary::before { transition: none; }',
+      '}',
       '.dshp-number:focus-visible, .dshp-select:focus-visible, .dshp-textarea:focus-visible, .dshp-btn:focus-visible, .dshp-switch:focus-visible, .dshp-text-input:focus-visible, .dshp-btn-sm:focus-visible { outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); outline-offset: 2px; }',
     ].join('\n')

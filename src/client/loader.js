@@ -12,9 +12,10 @@
 //      Plugins page's keyed `plugins.row.config` slot as
 //      `<bundle package>#<row id>`.
 //
-// All user-facing copy is Simplified Chinese and hard-coded on purpose: a bundle
-// outside the app tree has no locale dictionary seat of its own, and the host
-// falls back to raw keys when a dictionary is missing.
+// All user-facing copy goes through t() (shared/i18n.js): the dictionaries are
+// generated from locale/zh.jsonc + locale/en.jsonc (JSONC, language = file name)
+// at build time, and the active language follows the DSH client locale service
+// (ctx.locale, injected on this bundle); a missing entry falls back zh → key.
 window.__ModuleLoader__.load({
   id: 'dsh-polish',
   factory: function (require) {

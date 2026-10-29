@@ -130,9 +130,9 @@
       var h = Math.floor(totalSec / 3600)
       var m = Math.floor((totalSec % 3600) / 60)
       var s = totalSec % 60
-      if (h > 0) return h + ' 小时 ' + m + ' 分'
-      if (m > 0) return m + ' 分' + (s > 0 ? ' ' + s + ' 秒' : '')
-      return s + ' 秒'
+      if (h > 0) return t('timer.remaining.hours', { h: h, m: m })
+      if (m > 0) return t('timer.remaining.minutes', { m: m, s: s })
+      return t('timer.remaining.seconds', { s: s })
     }
 
     // 「几点钟触发」：触发时间戳 -> 本地时钟（24h）；跨天加 明天 / 具体日期。
@@ -148,15 +148,15 @@
       }
       var hhmm = pad(d.getHours()) + ':' + pad(d.getMinutes())
       if (diff === 0) return hhmm
-      if (diff === 1) return '明天 ' + hhmm
-      if (diff === -1) return '昨天 ' + hhmm
-      return d.getMonth() + 1 + '月' + d.getDate() + '日 ' + hhmm
+      if (diff === 1) return t('timer.tomorrow') + hhmm
+      if (diff === -1) return t('timer.yesterday') + hhmm
+      return t('timer.date', { m: d.getMonth() + 1, d: d.getDate() }) + hhmm
     }
 
     // 悬停提示：有触发时间 -> 「剩 X · HH:MM 触发」；没有（旧 host/未同步）-> 兜底。
     function timerTooltip(fireAt, now) {
-      if (typeof fireAt !== 'number' || !isFinite(fireAt) || fireAt <= now) return '有计时器在跑'
-      return '剩 ' + formatRemaining(fireAt - now) + ' · ' + fireClockLabel(fireAt, now) + ' 触发'
+      if (typeof fireAt !== 'number' || !isFinite(fireAt) || fireAt <= now) return t('timer.running')
+      return t('timer.tooltip', { remaining: formatRemaining(fireAt - now), clock: fireClockLabel(fireAt, now) })
     }
 
     // 行首时钟组件工厂：闭包捕获 timerActiveStore，插槽渲染时给它 { sessionId }。
@@ -181,7 +181,7 @@
               width: 16,
               height: 16,
               flex: '0 0 auto',
-              color: '#e8a33d',
+              color: 'var(--dsw-alias-state-warn-primary, #e8a33d)',
             },
           },
           ClockGlyph(),

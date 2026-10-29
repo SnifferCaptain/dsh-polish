@@ -1,6 +1,7 @@
 # dsh-polish bundle patch.
 #
-# Fifteen Loader rows: one bundle row plus fourteen independently toggleable components. Each row's
+# Seventeen Loader rows: one bundle row plus sixteen independently toggleable
+# components. Each row's
 # `name` must be an importable module specifier (the Loader calls
 # `tree.import(name)`), so the component rows point at subpath exports of this
 # package rather than at colon-qualified ids.
@@ -126,3 +127,39 @@
     # read-only route /api/dshp/compact-model/status reports recent reroutes.
     - id: 'dsh-polish:compact-model'
       name: 'dsh-polish/compact-model'
+
+    # PTC log self-healing: opening a history that fails with "PTC dispatch
+    # repeats subCallId" (the model reused a tool-call id after a rewind or
+    # compaction restarted its local counter) renames the reused id of the
+    # later execution in the stored log, then retries the open once. Repairs
+    # data only — never touches app.asar or DSH code; every other corruption
+    # is rethrown untouched. Writes are atomic with a timestamped backup kept
+    # next to the log; a healthy log is left bit-for-bit untouched. Disabled
+    # by default — the row switch is the master switch.
+    - id: 'dsh-polish:ptc-log-repair'
+      name: 'dsh-polish/ptc-log-repair'
+      disabled: true
+
+    # Compaction enforcer (hard-threshold butler): on every agent/pre-step it
+    # measures pressure as max(meter measurement, last real server-reported
+    # usage) x safety factor against floor(contextWindow x thresholdRatio);
+    # over threshold it prunes then forces compactIfNeeded('pressure'),
+    # re-measures, and when the context cannot be brought under the threshold
+    # it returns {kind:'reject'} WITHOUT calling next() — the turn stops with
+    # an error log instead of silently sending an over-window request (which
+    # built-in compaction-basic does: it swallows compaction failures and
+    # continues the turn). agent/request-error adds an overflow-recovery path
+    # that retries ONLY when the surface really shrank (replaceGeneration
+    # advanced). Known limits (documented in the component header): it cannot
+    # fix pi-ai's silent-overflow misjudgement or the 4-chars/token estimate;
+    # with a wrongly declared window the strategy is prune + reject. Its
+    # thresholdRatio should not be set below compaction-basic's own threshold
+    # (its compactIfNeeded gates on its own ratio and returns null below it).
+    # Recommended pairing: compaction-basic auto: false (single automatic
+    # path); without that config change this row acts as the supervisor after
+    # the built-in automatic compaction (registration order puts it later).
+    # Disabled by default — the row switch is the master switch; dryRun gives
+    # a warn-only rehearsal of the threshold before enforcing.
+    - id: 'dsh-polish:compaction-enforcer'
+      name: 'dsh-polish/compaction-enforcer'
+      disabled: true

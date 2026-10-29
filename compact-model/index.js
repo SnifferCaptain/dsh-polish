@@ -48,6 +48,45 @@
  * 链 + 服务可见性探针写入 <dshHome>/compact-model-diag.json——线上行为
  * 异常时直接读文件核对，不用再猜。
  *
+ * 1.0.11（2026-10-29）线上取证与架构再变更（「切换模型后 compact 有概率直接失败」）：
+ * 1.3.1 安装后的 compact-model-diag.json 给出决定性证据：
+ *   visibility: sessions=false, projections=false；eventCounts.onChange=0；
+ *   全部压缩 pass 的决策链里 sel 缓存恒空，目标一律退化到 ②last-route / ③default。
+ * 即 1.0.10 的主源（投影 onChange 馈送）在本宿主 fiber 里根本不可见，
+ * 压缩目标永远等于「最近一次真实请求的路线」= modelSelection.lastUsed——
+ * 恰好是用户刚切走的老模型（选择器切换只写 pending，lastUsed 要等下一次
+ * 真实请求才提交）。老模型若已死（切模型的典型动机）→ compact 直接失败；
+ * 而直接发消息读的是选择器实时值（pending ?? lastUsed）→ 正常。用户反馈
+ * 的「有概率」= 老模型是否仍可用 / 切换后是否先发过一条消息。
+ * 对照 session-slim（用户指出它从不遇到该问题）：它每次调用**拉取**
+ * ctx.sessions.list.getSnapshot().byId[id].projectionValues（view 形状
+ * {lastUsed, next}，next = pending ?? lastUsed = 「下一次请求要用的模型」），
+ * 且调用前用 llm.resolveCallConfig 校验路线。1.0.11 照此改造：
+ *   ①' 热会话：快照 byId 拉取（只读零 I/O）——与正常消息同源，切换当下即生效；
+ *   ①'' 冷会话（不在快照）：投影缓存文件 <dshHome>/storages/session_projcache/
+ *       sessions/<id>.json（state 形状 {lastUsed, pending}；pending 跨重启持久，
+ *       即「DSH 重启前最后一次切换的意图」）；
+ *   ① 推送缓存（保留，降级为快照不可用时的来源）；② ③ 不变。
+ *   inject 增加 sessions（session-slim 行在本宿主以同样 inject 稳定激活，
+ *   可用性已实证）。
+ *
+ * 1.0.12（同日，紧急回滚一次自伤）：1.0.11 把 llm/stream 监听器改成了
+ * async function 去做 await resolveCallConfig 校验——这是致命的：cordis
+ * waterfall 直接返回监听器返回值（不 await），llm 调用方用 yield* 消费，
+ * Promise 不是 async iterable → 所有模型回合炸「yield* (intermediate value)
+ * is not async iterable」。1.0.12 监听器恢复同步（这是硬约束，注释里已写明），
+ * 校验逻辑整体移除：压缩目标路线是否可用交给真正的调用去暴露，与正常消息
+ * 的失败方式完全一致——本组件不再做任何异步前置判断。
+ *
+ * 1.0.13：修正 1.0.11 的取数点。线上诊断显示本宿主（DSH 0.2.1-rc.1）的
+ * ctx.sessions 是 SessionStore（get(id) → Session，list 是方法），根本没有
+ * 客户端那种 list.getSnapshot()/projectionValues 快照存储；照抄 session-slim
+ * 的客户端取数路径在本宿主恒为 undefined。改为直接读**会话日志**：
+ * 倒序找最近一条 model/selection（= 选择器当前值 pending）与 request/header
+ * （= 已提交的 lastUsed），next = pending ?? lastUsed 与模型选择投影完全一致。
+ * 冷会话仍读投影缓存文件 record.rows.modelSelection.val（同形状）。
+ * 热源 via 标记为 'session-log'。
+ *
  * 只动压缩调用：purpose !== 'compaction' 的正常模型回合绝不触碰，会话仍用
  * 它自己选择的模型。
  * Fail-safe：options 被冻结、服务缺失、任何读取异常 → 原样放行 + warn 一次。
@@ -63,14 +102,18 @@
  */
 
 import { writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const inject = ['agentDefaultModel', 'settings', 'connection']
+export const inject = ['agentDefaultModel', 'settings', 'connection', 'sessions']
 
 var STATUS_PATH = '/api/dshp/compact-model/status'
 var MAX_REROUTES = 20
 var MAX_PASSES = 20
-var VERSION = '1.0.10'
+// 倒序扫日志时的上限（lastUsed/pending 都来自最近的请求/切换，几百条内必有；
+// 上限只是防御异常日志）。
+var LOG_SCAN_LIMIT = 4000
+var VERSION = '1.0.13'
 var DIAG_NAME = 'compact-model-diag.json'
 
 export function apply(ctx) {
@@ -82,20 +125,18 @@ export function apply(ctx) {
   // ── 服务可见性探针（写进诊断文件 + 状态路由，回答「线上为什么是 null」）──
   var sessions = null
   var projections = null
-  var llm = null
   try { sessions = ctx.sessions } catch (error) {}
   try { projections = ctx.sessionProjections } catch (error) {}
-  try { llm = ctx.llm } catch (error) {}
   var visibility = {
     sessions: !!sessions,
     sessionsGet: sessions ? typeof sessions.get : undefined,
     sessionsRetain: sessions ? typeof sessions.retain : undefined,
     sessionsUsing: sessions ? typeof sessions.using : undefined,
+    sessionsListType: sessions && sessions.list ? typeof sessions.list : undefined,
     projections: !!projections,
     projectionsStateOf: projections ? typeof projections.stateOf : undefined,
     projectionsOnChanged: projections ? typeof projections.onChanged : undefined,
     agentDefaultModel: !!ctx.agentDefaultModel,
-    llm: !!llm,
   }
   var eventCounts = { onChange: 0, sessionEvent: 0, agentRequest: 0 }
 
@@ -243,26 +284,114 @@ export function apply(ctx) {
     return null
   }
 
-  // ── 诊断文件：<dshHome>/compact-model-diag.json（每次 pass 刷新）──
-  // 宿主 dsh-app-boot 提供的 dshHomePath 是函数（dsh-home-paths：
-  // configured > $DSH_HOME > ~/.dsh，无参调用 = home 根）；也容忍字符串值。
-  function diagPath() {
+  // ── 1.0.11 主源：按需拉取的实时选择（session-slim 同款，不依赖服务可见性）──
+  // 选择值形状：view {lastUsed, next}（next = pending ?? lastUsed）或
+  // state {lastUsed, pending}。取数优先级 next → pending → lastUsed：
+  // 前两者是「下一次请求要用的模型」（与正常消息同源），lastUsed 是兜底
+  // （最坏情况 = 原生压缩的行为，不会更差）。
+  function pickLiveSelection(view) {
+    if (!view || typeof view !== 'object') return null
+    var cand = null
+    if (view.next && typeof view.next === 'object') cand = view.next
+    else if (view.pending && typeof view.pending === 'object') cand = view.pending
+    else if (view.lastUsed && typeof view.lastUsed === 'object') cand = view.lastUsed
+    if (!cand) return null
+    if (typeof cand.provider !== 'string' || cand.provider.length === 0) return null
+    if (typeof cand.model !== 'string' || cand.model.length === 0) return null
+    return {
+      provider: cand.provider,
+      model: cand.model,
+      reasoningEffort: typeof cand.reasoningEffort === 'string' && cand.reasoningEffort ? cand.reasoningEffort : undefined,
+    }
+  }
+
+  function dshHome() {
     try {
       var hp = ctx.dshHomePath
       if (typeof hp === 'function') {
         var home = hp()
-        if (typeof home === 'string' && home.length > 0) return join(home, DIAG_NAME)
+        if (typeof home === 'string' && home.length > 0) return home
       } else if (typeof hp === 'string' && hp.length > 0) {
-        return join(hp, DIAG_NAME)
+        return hp
       }
     } catch (error) {}
     try {
       var root = process.env && process.env.DSH_HOME
-      if (typeof root === 'string' && root.length > 0) return join(root, DIAG_NAME)
+      if (typeof root === 'string' && root.length > 0) return root
       var up = process.env && process.env.USERPROFILE
-      if (typeof up === 'string' && up.length > 0) return join(up, '.dsh', DIAG_NAME)
+      if (typeof up === 'string' && up.length > 0) return join(up, '.dsh')
     } catch (error) {}
     return null
+  }
+
+  // 从活会话日志尾部倒序找最近一次 model/selection（选择器切换意图 = pending）
+  // 与 request/header（已提交的真实路线 = lastUsed）。这两个事件就是模型选择
+  // 投影的输入，所以这里复刻出的 next = pending ?? lastUsed 与 UI 上「下一次
+  // 请求用哪个模型」一致（本宿主 ctx.sessions 是 SessionStore，没有
+  // list.getSnapshot 那种客户端快照存储）。
+  function liveViewFromLog(session) {
+    var events = null
+    try {
+      if (session && typeof session.snapshotEvents === 'function') events = session.snapshotEvents()
+    } catch (error) {}
+    if (!events || typeof events.length !== 'number' || events.length === 0) return null
+    var pending = null
+    var lastUsed = null
+    var floor = events.length - LOG_SCAN_LIMIT
+    if (floor < 0) floor = 0
+    for (var i = events.length - 1; i >= floor; i--) {
+      var ev = events[i]
+      if (!ev || typeof ev !== 'object') continue
+      if (!pending && ev.type === 'model/selection') {
+        var d = ev.data || {}
+        if (typeof d.provider === 'string' && d.provider && typeof d.model === 'string' && d.model) {
+          pending = { provider: d.provider, model: d.model, reasoningEffort: d.reasoningEffort }
+        }
+      } else if (!lastUsed && ev.type === 'request/header') {
+        var cfg = ev.data && ev.data.header ? ev.data.header.config : null
+        if (cfg && typeof cfg.provider === 'string' && cfg.provider && typeof cfg.model === 'string' && cfg.model) {
+          lastUsed = { provider: cfg.provider, model: cfg.model, reasoningEffort: cfg.reasoningEffort }
+        }
+      }
+      if (pending && lastUsed) break
+    }
+    if (!pending && !lastUsed) return null
+    return { lastUsed: lastUsed, pending: pending }
+  }
+
+  // 每次压缩调用时拉取该会话的实时选择。返回 {sel, via} 或 null。
+  // 热：活会话日志（只读内存快照，零 I/O）；冷：投影缓存文件（pending 跨重启
+  // 持久，形状 record.rows.modelSelection.val = {lastUsed, pending}）。
+  function snapshotSelection(sessionId) {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return null
+    try {
+      var store = ctx.sessions
+      var session = store && typeof store.get === 'function' ? store.get(sessionId) : null
+      if (session) {
+        var sel = pickLiveSelection(liveViewFromLog(session))
+        if (sel) return { sel: sel, via: 'session-log' }
+      }
+    } catch (error) {}
+    try {
+      var home = dshHome()
+      if (home) {
+        var file = join(home, 'storages', 'session_projcache', 'sessions', sessionId + '.json')
+        var rec = JSON.parse(readFileSync(file, 'utf8'))
+        var rows = rec && rec.record ? rec.record.rows : null
+        var val = rows && rows.modelSelection ? rows.modelSelection.val : null
+        var cold = pickLiveSelection(val)
+        if (cold) return { sel: cold, via: 'projcache' }
+      }
+    } catch (error) {}
+    return null
+  }
+
+  // ── 诊断文件：<dshHome>/compact-model-diag.json（每次 pass 刷新）──
+  // 宿主 dsh-app-boot 提供的 dshHomePath 是函数（dsh-home-paths：
+  // configured > $DSH_HOME > ~/.dsh，无参调用 = home 根）；也容忍字符串值。
+  function diagPath() {
+    var home = dshHome()
+    return home ? join(home, DIAG_NAME) : null
   }
   // 串行化写入（同一次压缩 pass 会触发多次 flush，并发写同一文件会交错损坏）；
   // 快照在调用时取，保证落盘的是触发时点的状态。
@@ -309,34 +438,27 @@ export function apply(ctx) {
     } catch (error) {}
   }
 
-  // 压缩目标解析：① 实时选择器 → ② 最近真实路线 → ③ 全局默认。
-  function resolveTarget(sessionId, from) {
-    var trace = { from: from, sel: null, route: null, defaultSel: null, target: null }
-    var target = null
+  // 压缩目标解析（1.0.11 起主源是 hook 里的 snapshotSelection；这里是
+  // 快照不可用时的降级链）：① 推送选择缓存 → ② 最近真实路线 → ③ 全局默认。
+  function resolveCached(sessionId) {
     if (typeof sessionId === 'string' && sessionId.length > 0) {
       var sel = selCache.get(sessionId)
+      if (sel) return { provider: sel.provider, model: sel.model, reasoningEffort: sel.reasoningEffort, source: 'selector-cache' }
       var route = routeCache.get(sessionId)
-      if (sel) {
-        trace.sel = sel
-        target = { provider: sel.provider, model: sel.model, reasoningEffort: sel.reasoningEffort, source: 'selector' }
-      } else if (route) {
-        trace.route = route
-        target = { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort, source: 'last-route' }
-      }
+      if (route) return { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort, source: 'last-route' }
     }
-    if (!target) {
-      target = defaultSelection()
-      trace.defaultSel = target
-    }
-    trace.target = target ? target.provider + '/' + target.model : null
-    recordPass(sessionId, trace)
-    return target
+    var def = defaultSelection()
+    return def
   }
 
   // 组件核心：全局 llm/stream 瀑布。监听器只在该调用是压缩摘要（purpose =
   // 'compaction'）且解析出的目标与本次路线不同、且 options 可写时改写；
   // 其余一律原样 next()。this 绑定为 LlmRuntime（Cordis waterfall 约定），
   // 这里用不到。
+  // 必须保持同步！waterfall 直接返回监听器的返回值（不 await），调用方用
+  // yield* 消费——返回 Promise 会立刻炸「yield* (intermediate value) is not
+  // async iterable」。所以这里不做任何异步校验：目标路线是否存在由真正的
+  // 调用去暴露，和正常消息的失败方式完全一致。
   ctx.on('llm/stream', function (options, next) {
     try {
       if (
@@ -346,7 +468,21 @@ export function apply(ctx) {
         typeof options.model === 'string'
       ) {
         var from = options.provider + '/' + options.model
-        var target = resolveTarget(options.sessionId, from)
+        // ①' 主源：按需拉取的选择器实时值（与正常消息同源 → 切换后压缩与
+        // 发消息指向同一个模型）；快照拿不到才走推送缓存降级链。
+        var target = null
+        var live = snapshotSelection(options.sessionId)
+        if (live) {
+          target = live.sel
+          target.source = live.via
+        } else {
+          target = resolveCached(options.sessionId)
+        }
+        recordPass(options.sessionId, {
+          from: from,
+          target: target ? target.provider + '/' + target.model : null,
+          source: target ? target.source : null,
+        })
         if (target && (target.provider !== options.provider || target.model !== options.model)) {
           if (Object.isFrozen(options)) {
             warnOnce('frozen:' + from, 'compaction options 已冻结，跳过改道（' + from + '）')

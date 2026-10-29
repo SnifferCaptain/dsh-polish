@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..')
 const sources = [
   'src/client/loader.js',
   'src/client/shared/constants.js',
+  'src/client/shared/i18n.js',
   'src/client/shared/styles.js',
   'src/client/shared/session-registry.js',
   'src/client/thinking-renderer/engine.js',

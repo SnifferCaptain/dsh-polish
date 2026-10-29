@@ -1,10 +1,11 @@
     // ------------------------------------------------------------------ apply
 
-    var inject = ['slots', 'configForms']
+    var inject = ['slots', 'configForms', 'locale']
 
     function apply(ctx) {
       upsertStyle(FORM_STYLE_ID, FORM_CSS)
       upsertStyle(DEPTH_STYLE_ID, DEPTH_CSS)
+      globalThis.dshI18nBind(ctx)
 
       // ---- component A: DOM engine, driven by its settings namespace.
       var engine = createEngine()
@@ -217,7 +218,7 @@
             return child.configForms.whileServed([NS_SESSION_SLIM], function () {
               return child.slots.inject('settings.section', function () {
                 return child.slots.register(
-                  { name: 'settings.section', id: 'session-slim', order: 30, label: function () { return '会话瘦身' } },
+                  { name: 'settings.section', id: 'session-slim', order: 30, label: function () { return t('slim.section') } },
                   makeSessionSlimSettingsPage(child),
                 )
               })
@@ -460,7 +461,7 @@
           return ctx.configForms.whileServed([NS_PROMPTS], function () {
             return ctx.slots.inject('settings.section', function () {
               return ctx.slots.register(
-                { name: 'settings.section', id: 'prompts', order: 25, label: function () { return '提示词设置' } },
+                { name: 'settings.section', id: 'prompts', order: 25, label: function () { return t('prompts.section') } },
                 makePromptsSettingsPage(ctx),
               )
             })

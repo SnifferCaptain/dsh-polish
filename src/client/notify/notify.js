@@ -195,15 +195,15 @@
     }
 
     function attentionLabel(kind) {
-      if (kind === 'approval') return '需要你的审批'
-      if (kind === 'plan-review') return '计划待确认'
-      return '模型在提问'
+      if (kind === 'approval') return t('notify.kind.approval')
+      if (kind === 'plan-review') return t('notify.kind.plan')
+      return t('notify.kind.question')
     }
 
     function attentionBody(kind) {
-      if (kind === 'approval') return '有一个操作在等你批准。'
-      if (kind === 'plan-review') return '模型提交了计划，等你确认。'
-      return '模型有一个问题等你回答。'
+      if (kind === 'approval') return t('notify.body.approval')
+      if (kind === 'plan-review') return t('notify.body.plan')
+      return t('notify.body.question')
     }
 
     function createNotify() {
@@ -218,7 +218,7 @@
       function fireCompletion() {
         var now = new Date().toLocaleTimeString()
         if (config.completeSound) playCompletionSound()
-        if (config.completeNotify) showSystemNotification('任务完成', '当前会话的一轮处理完成了，可以查看结果。', 'dshpolish-complete')
+        if (config.completeNotify) showSystemNotification(t('notify.title.complete'), t('notify.body.complete'), 'dshpolish-complete')
         setNotifyStats({ lastComplete: now, error: '' })
       }
 
@@ -339,7 +339,7 @@
       } catch (error) {
         /* ignore */
       }
-      var shown = showSystemNotification('dsh-polish 测试', '这是一条测试系统通知；提示音应已先后播放。', 'dshpolish-test')
+      var shown = showSystemNotification(t('notify.title.test'), t('notify.body.test'), 'dshpolish-test')
       setNotifyStats({ lastTest: new Date().toLocaleTimeString() })
       return shown
     }

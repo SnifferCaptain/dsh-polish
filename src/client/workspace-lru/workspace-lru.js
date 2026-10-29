@@ -214,7 +214,7 @@
       // call silently failed on every reorder and nothing ever moved.)
       function callInsertBefore(id, beforeId) {
         if (!workspaces || typeof workspaces.insertBefore !== 'function') {
-          return Promise.reject(new Error('workspaces.insertBefore 不可用'))
+          return Promise.reject(new Error(t('lru.unavailable')))
         }
         return beforeId === undefined
           ? workspaces.insertBefore(id)

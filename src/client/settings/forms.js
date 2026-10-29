@@ -94,13 +94,13 @@
       }, [])
 
       if (form === undefined || form === null || model.snapshot === null) {
-        return React.createElement('p', { className: 'dshp-note' }, '该组件当前没有可编辑的设置项。')
+        return React.createElement('p', { className: 'dshp-note' }, t('form.noSettings'))
       }
       if (model.snapshot.status === 'unavailable') {
-        return React.createElement('p', { className: 'dshp-note' }, '该组件当前未加载，暂时无法配置。')
+        return React.createElement('p', { className: 'dshp-note' }, t('form.unavailable'))
       }
       if (model.snapshot.status !== 'ready') {
-        return React.createElement('p', { className: 'dshp-note' }, '正在读取设置…')
+        return React.createElement('p', { className: 'dshp-note' }, t('form.loading'))
       }
 
       var remote = model.remote
@@ -263,7 +263,7 @@
                 'div',
                 { className: 'dshp-label' },
                 f.label,
-                isOverridden ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'accent', title: '已偏离默认值' }, '已覆盖') : null,
+                isOverridden ? React.createElement('span', { className: 'dshp-tag', 'data-tone': 'accent', title: t('form.overrideHint') }, t('form.overridden')) : null,
               ),
               f.hint ? React.createElement('div', { className: 'dshp-hint' }, f.hint) : null,
             ),
@@ -276,17 +276,17 @@
       // edits, saved/failed feedback, or overridden values that can be reset.
       var message = null
       var tone = 'idle'
-      if (!writable) message = '此部署的设置为只读。'
+      if (!writable) message = t('form.readonly')
       else if (dirty.length > 0) {
-        message = '有未保存的更改'
+        message = t('form.dirty')
         tone = 'warn'
       } else if (model.status === 'saved') {
-        message = '已保存，立即生效'
+        message = t('form.savedLive')
         tone = 'ok'
       } else if (model.status === 'failed') {
-        message = '保存被拒绝，请重试'
+        message = t('form.saveRejected')
         tone = 'err'
-      } else if (overridden.length > 0) message = '已自定义 ' + overridden.length + ' 项'
+      } else if (overridden.length > 0) message = t('form.customizedCount', { n: overridden.length })
       var bar = null
       if (message !== null || overridden.length > 0) {
         bar = React.createElement(
@@ -299,14 +299,14 @@
             ? React.createElement(
                 'button',
                 { type: 'button', className: 'dshp-btn dshp-btn-ghost', disabled: !writable || busy, onClick: resetAll },
-                '恢复默认',
+                t('form.resetToDefault'),
               )
             : null,
           dirty.length > 0
             ? React.createElement(
                 'button',
                 { type: 'button', className: 'dshp-btn dshp-btn-primary', disabled: !writable || busy, onClick: save },
-                busy ? '保存中…' : '保存',
+                busy ? t('common.saving') : t('common.save'),
               )
             : null,
         )
@@ -343,9 +343,9 @@
       {
         key: 'lines',
         kind: 'number',
-        group: '预览窗口',
-        label: '预览行数',
-        hint: '思考进行中最多显示几行，可上下滚动。',
+        group: t('renderer.group.preview'),
+        label: t('renderer.lines.label'),
+        hint: t('renderer.lines.hint'),
         min: 1,
         max: 20,
         fallback: RENDERER_DEFAULTS.lines,
@@ -353,25 +353,25 @@
       {
         key: 'autoOpen',
         kind: 'boolean',
-        group: '预览窗口',
-        label: '自动展开思考过程',
-        hint: '思考时自动展开；你手动点过之后不再干预。',
+        group: t('renderer.group.preview'),
+        label: t('renderer.autoOpen.label'),
+        hint: t('renderer.autoOpen.hint'),
         fallback: RENDERER_DEFAULTS.autoOpen,
       },
       {
         key: 'showTime',
         kind: 'boolean',
-        group: '预览窗口',
-        label: '显示思考时间',
-        hint: '展开时在标题行右侧显示已用秒数。',
+        group: t('renderer.group.preview'),
+        label: t('renderer.showTime.label'),
+        hint: t('renderer.showTime.hint'),
         fallback: RENDERER_DEFAULTS.showTime,
       },
       {
         key: 'followMs',
         kind: 'number',
-        group: '动画',
-        label: '跟随时长（毫秒）',
-        hint: '预览滑到最新行所花的时间，0 = 即时。',
+        group: t('renderer.group.animation'),
+        label: t('renderer.followMs.label'),
+        hint: t('renderer.followMs.hint'),
         min: 0,
         max: 2000,
         step: 50,
@@ -380,9 +380,9 @@
       {
         key: 'collapseMs',
         kind: 'number',
-        group: '动画',
-        label: '收起动画（毫秒）',
-        hint: '思考结束后折叠的过渡时长，0 = 立即。',
+        group: t('renderer.group.animation'),
+        label: t('renderer.collapseMs.label'),
+        hint: t('renderer.collapseMs.hint'),
         min: 0,
         max: 2000,
         step: 10,
@@ -394,26 +394,26 @@
       {
         key: 'showInComposer',
         kind: 'boolean',
-        label: '把「推理等级」改成滑动条',
-        hint: '模型面板里的档位列表换成滑条；关闭后恢复原样。',
+        label: t('depth.showInComposer.label'),
+        hint: t('depth.showInComposer.hint'),
         fallback: DEPTH_DEFAULTS.showInComposer,
       },
       {
         key: 'labels',
         kind: 'boolean',
-        label: '显示档位名称',
-        hint: '在滑条右侧保留当前档位名（如 High）。',
+        label: t('depth.labels.label'),
+        hint: t('depth.labels.hint'),
         fallback: DEPTH_DEFAULTS.labels,
       },
       {
         key: 'palette',
         kind: 'swatch',
-        label: '色阶',
-        hint: '按模型声明的档位数插值。',
+        label: t('depth.palette.label'),
+        hint: t('depth.palette.hint'),
         options: [
-          { value: 'blue-purple', label: '浅蓝 → 深蓝 → 紫', short: '蓝紫' },
-          { value: 'brand', label: '品牌蓝（浅 → 深）', short: '品牌蓝' },
-          { value: 'mono', label: '单色灰阶', short: '灰阶' },
+          { value: 'blue-purple', label: t('depth.palette.blue-purple'), short: t('depth.palette.blue-purple.short') },
+          { value: 'brand', label: t('depth.palette.brand'), short: t('depth.palette.brand.short') },
+          { value: 'mono', label: t('depth.palette.mono'), short: t('depth.palette.mono.short') },
         ],
         fallback: DEPTH_DEFAULTS.palette,
       },
@@ -423,15 +423,29 @@
       {
         key: 'enabled',
         kind: 'boolean',
-        label: '启用上箭头召回历史',
-        hint: '输入框为空时按 ↑ 召回最近的用户消息；↑/↓ 翻历史，Esc 清空。',
+        label: t('history.enabled.label'),
+        hint: t('history.enabled.hint'),
         fallback: HISTORY_DEFAULTS.enabled,
       },
     ]
 
+    /**
+     * 行摘要的唯一语法：**状态在前、数字在后，只用「 · 」分隔**。
+     * 行标题已经写了功能名，摘要不再重复它；关闭态不描述行为。
+     */
+    function summaryLine(parts) {
+      var out = []
+      for (var i = 0; i < parts.length; i++) if (parts[i]) out.push(parts[i])
+      return out.join(' · ')
+    }
+
+    function onOff(flag) {
+      return flag ? t('common.on') : t('common.off')
+    }
+
     function summaryFrom(form, read) {
-      if (form === undefined || form === null || form.state === undefined) return '设置加载中…'
-      if (form.state.status !== 'ready') return '设置加载中…'
+      if (form === undefined || form === null || form.state === undefined) return t('form.loading')
+      if (form.state.status !== 'ready') return t('form.loading')
       return read(form.state.value || {})
     }
 
@@ -442,15 +456,13 @@
           'span',
           null,
           summaryFrom(form, function (value) {
-            return (
-              '思考过程滚动预览：' +
-              num(value.lines, RENDERER_DEFAULTS.lines, 1, 20) +
-              ' 行，结束后自动收起' +
-              (value.showTime === false ? ' · 不显示时间' : ' · 显示时间') +
-              (num(value.followMs, RENDERER_DEFAULTS.followMs, 0, 2000) === 0
-                ? ' · 即时跟随'
-                : ' · 跟随 ' + num(value.followMs, RENDERER_DEFAULTS.followMs, 0, 2000) + 'ms')
-            )
+            var follow = num(value.followMs, RENDERER_DEFAULTS.followMs, 0, 2000)
+            return summaryLine([
+              t('renderer.summary.lines', num(value.lines, RENDERER_DEFAULTS.lines, 1, 20)),
+              t('renderer.summary.collapseAfter'),
+              value.showTime === false ? '' : t('renderer.summary.showTime'),
+              follow === 0 ? t('renderer.summary.followInstant') : t('renderer.summary.followMs', { n: follow }),
+            ])
           }),
         )
       }
@@ -465,11 +477,15 @@
           'span',
           null,
           summaryFrom(form, function (value) {
-            var palettes = { 'blue-purple': '浅蓝 → 深蓝 → 紫', brand: '品牌蓝', mono: '灰阶' }
+            var palettes = { 'blue-purple': t('depth.palette.blue-purple.short'), brand: t('depth.palette.brand.short'), mono: t('depth.palette.mono.short') }
             var palette = palettes[value.palette] === undefined ? palettes[DEPTH_DEFAULTS.palette] : palettes[value.palette]
-            var where = value.showInComposer === false ? '模型面板保持原样' : '推理等级 = 滑动条'
-            var probe = describePatcher(value)
-            return where + ' · ' + palette + (probe === '' ? '' : ' · ' + probe)
+            var off = value.showInComposer === false
+            return summaryLine([
+              off ? t('depth.summary.original') : t('depth.summary.slider'),
+              off ? '' : palette,
+              off || value.labels === false ? '' : t('depth.summary.showLevelName'),
+              describePatcher(value),
+            ])
           }),
         )
       }
@@ -477,10 +493,10 @@
       var depthItems
       if (depthStats.panels > 0) {
         depthItems = [
-          { label: '面板', value: depthStats.panels, tone: 'ok' },
-          { label: '滑条', value: depthStats.claimed, tone: depthStats.claimed > 0 ? 'ok' : 'warn' },
+          { label: t('depth.strip.panels'), value: depthStats.panels, tone: 'ok' },
+          { label: t('depth.strip.sliders'), value: depthStats.claimed, tone: depthStats.claimed > 0 ? 'ok' : 'warn' },
         ]
-        if (depthStats.skip !== '' && SKIP_TEXT[depthStats.skip] !== undefined) depthItems.push({ label: '跳过', value: SKIP_TEXT[depthStats.skip], tone: 'warn' })
+        if (depthStats.skip !== '' && SKIP_TEXT[depthStats.skip] !== undefined) depthItems.push({ label: t('depth.strip.skip'), value: SKIP_TEXT[depthStats.skip], tone: 'warn' })
       } else {
         depthItems = [{ label: describePatcher(form && form.state ? form.state.value || {} : {}), tone: 'idle' }]
       }
@@ -495,12 +511,12 @@
     function describePatcher(value) {
       var stats = patcherStatsStore.get()
       if (stats.panels > 0) {
-        var skip = stats.skip === '' || SKIP_TEXT[stats.skip] === undefined ? '' : '（跳过：' + SKIP_TEXT[stats.skip] + '）'
-        return '面板 ' + stats.panels + ' · 滑条 ' + stats.claimed + skip
+        var skip = stats.skip === '' || SKIP_TEXT[stats.skip] === undefined ? '' : t('depth.patcher.skipSuffix', { reason: SKIP_TEXT[stats.skip] })
+        return t('depth.patcher.panels', { panels: stats.panels, sliders: stats.claimed }) + skip
       }
-      if (value.showInComposer === false) return '未扫描：已关闭'
-      if (sessionRegistry.map.size === 0) return '等待会话占位'
-      return '等待面板打开'
+      if (value.showInComposer === false) return t('depth.patcher.off')
+      if (sessionRegistry.map.size === 0) return t('depth.patcher.waitingSession')
+      return t('depth.patcher.waitingPanel')
     }
 
     function HistoryPage(props) {
@@ -513,11 +529,11 @@
       }
       var hs = historyStatsStore.get()
       var items
-      if (hs.sessions <= 0) items = [{ label: '等待会话占位', tone: 'idle' }]
+      if (hs.sessions <= 0) items = [{ label: t('depth.patcher.waitingSession'), tone: 'idle' }]
       else {
-        items = [{ label: '会话', value: hs.sessions, tone: 'ok' }]
-        if (hs.lastError) items.push({ label: '错误', value: hs.lastError, tone: 'err' })
-        else items.push(hs.lastCount > 0 ? { label: '已读', value: hs.lastCount + ' 条用户消息', tone: 'ok' } : { label: '等待 ↑', tone: 'idle' })
+        items = [{ label: t('history.strip.sessions'), value: hs.sessions, tone: 'ok' }]
+        if (hs.lastError) items.push({ label: t('common.error'), value: hs.lastError, tone: 'err' })
+        else items.push(hs.lastCount > 0 ? { label: t('history.strip.read'), value: t('history.strip.userMessages', { n: hs.lastCount }), tone: 'ok' } : { label: t('history.strip.waitingUp'), tone: 'idle' })
       }
       return React.createElement(SettingsForm, { form: form, fields: HISTORY_FIELDS, coerce: coerceHistory, after: statusStrip(items) })
     }
@@ -525,30 +541,30 @@
     /** The summary's health line: what the recall engine currently sees. */
     function describeHistory(value) {
       var stats = historyStatsStore.get()
-      var on = value.enabled !== false ? '开启' : '关闭'
+      var on = value.enabled !== false ? t('common.on') : t('common.off')
       var probe
       if (stats.sessions > 0) {
-        if (stats.lastError) probe = '会话 ' + stats.sessions + ' · ' + stats.lastError
-        else probe = stats.lastCount > 0 ? '会话 ' + stats.sessions + ' · 已读 ' + stats.lastCount + ' 条用户消息' : '会话 ' + stats.sessions + ' · 等待 ↑'
+        if (stats.lastError) probe = t('history.strip.sessionsCount', { n: stats.sessions }) + ' · ' + stats.lastError
+        else probe = stats.lastCount > 0 ? t('history.strip.sessionsCount', { n: stats.sessions }) + ' · ' + t('history.strip.read') + ' ' + t('history.strip.userMessages', { n: stats.lastCount }) : t('history.strip.sessionsCount', { n: stats.sessions }) + ' · ' + t('history.strip.waitingUp')
       } else {
-        probe = '等待会话占位'
+        probe = t('depth.patcher.waitingSession')
       }
-      return '上箭头召回历史：' + on + ' · ' + probe
+      return summaryLine([on, probe])
     }
 
     var LRU_FIELDS = [
       {
         key: 'enabled',
         kind: 'boolean',
-        label: '按最近使用排序工作区',
-        hint: '最近用过的分组置顶，分组本身保留。',
+        label: t('lru.enabled.label'),
+        hint: t('lru.enabled.hint'),
         fallback: LRU_DEFAULTS.enabled,
       },
       {
         key: 'subagent',
         kind: 'boolean',
-        label: '按最近使用排序子智能体',
-        hint: '打开列表时按最近活动重排；与上一项互相独立。',
+        label: t('lru.subagent.label'),
+        hint: t('lru.subagent.hint'),
         fallback: LRU_DEFAULTS.subagent,
       },
     ]
@@ -562,17 +578,21 @@
     /** The LRU status line: how many groups it sees and the last reorder. */
     function describeLru(value) {
       var stats = lruStatsStore.get()
-      var on = value.enabled !== false ? '开启' : '关闭'
-      var subOn = value.subagent === true ? '开启' : '关闭'
+      var on = value.enabled !== false ? t('common.on') : t('common.off')
+      var subOn = value.subagent === true ? t('common.on') : t('common.off')
       var probe
       if (stats.error) {
         probe = stats.error
       } else if (stats.workspaces > 0) {
-        probe = '工作区 ' + stats.workspaces + (stats.lastMove ? ' · 最近重排 ' + stats.lastMove : ' · 待命')
+        probe = t('lru.strip.workspaces') + ' ' + stats.workspaces + (stats.lastMove ? t('lru.summary.recentMove', { time: stats.lastMove }) : t('lru.summary.idle'))
       } else {
-        probe = '等待工作区列表'
+        probe = t('lru.summary.waiting')
       }
-      return '工作区 LRU 排序：' + on + ' · ' + probe + ' ｜ 子智能体 LRU：' + subOn + (stats.subagents > 0 ? '（最近一次打开时重排 ' + stats.subagents + ' 个目录）' : '')
+      return summaryLine([
+        t('lru.summary.workspaces', { on: on }),
+        probe,
+        t('lru.summary.subagents', { on: subOn, detail: stats.subagents > 0 ? t('lru.summary.subagentsDetail', { n: stats.subagents }) : '' }),
+      ])
     }
 
     function LruPage(props) {
@@ -585,14 +605,14 @@
       }
       var ls = lruStatsStore.get()
       var items
-      if (ls.error) items = [{ label: '错误', value: ls.error, tone: 'err' }]
+      if (ls.error) items = [{ label: t('common.error'), value: ls.error, tone: 'err' }]
       else if (ls.workspaces > 0) {
         items = [
-          { label: '工作区', value: ls.workspaces, tone: 'ok' },
-          { label: '最近重排', value: ls.lastMove || '待命', tone: ls.lastMove ? 'ok' : 'idle' },
+          { label: t('lru.strip.workspaces'), value: ls.workspaces, tone: 'ok' },
+          { label: t('lru.strip.lastMove'), value: ls.lastMove || t('lru.strip.idle'), tone: ls.lastMove ? 'ok' : 'idle' },
         ]
-        if (ls.subagents > 0) items.push({ label: '子智能体', value: '重排 ' + ls.subagents + ' 个目录', tone: 'ok' })
-      } else items = [{ label: '等待工作区列表', tone: 'idle' }]
+        if (ls.subagents > 0) items.push({ label: t('lru.strip.subagents'), value: t('lru.strip.reordered', { n: ls.subagents }), tone: 'ok' })
+      } else items = [{ label: t('lru.summary.waiting'), tone: 'idle' }]
       return React.createElement(SettingsForm, { form: form, fields: LRU_FIELDS, coerce: coerceLru, after: statusStrip(items) })
     }
 
@@ -600,8 +620,8 @@
       {
         key: 'enabled',
         kind: 'boolean',
-        label: '启用 opencode 模式（shell 绕过 OS 沙箱）',
-        hint: 'pwsh 命令（含 python / node / git）不再经 OS 沙箱，以 harness 进程权限直接运行；write / edit 的围界不变。关闭即时恢复，无需重启。',
+        label: t('shell.enabled.label'),
+        hint: t('shell.enabled.hint'),
         fallback: SHELL_LOCAL_DEFAULTS.enabled,
       },
     ]
@@ -613,8 +633,8 @@
 
     /** The shell-local status line: whether the unconfined shell is in effect. */
     function describeShellLocal(value) {
-      var on = value.enabled !== false ? '开启' : '关闭'
-      return 'opencode 模式（非约束 shell）：' + on + (value.enabled !== false ? ' · shell 命令绕过 OS 沙箱，文件工具围界不变' : ' · 系统沙箱照常')
+      var on = value.enabled !== false ? t('common.on') : t('common.off')
+      return summaryLine([on, value.enabled !== false ? t('shell.summary.bypass') : t('shell.summary.sandbox')])
     }
 
     function ShellLocalPage(props) {
@@ -631,9 +651,9 @@
         coerce: coerceShellLocal,
         after: statusStrip([
           shellOn
-            ? { label: 'shell', value: '绕过 OS 沙箱', tone: 'warn' }
-            : { label: 'shell', value: '系统沙箱', tone: 'ok' },
-          { label: '文件工具围界', value: '不变', tone: 'ok' },
+            ? { label: 'shell', value: t('shell.strip.bypass'), tone: 'warn' }
+            : { label: 'shell', value: t('shell.strip.sandbox'), tone: 'ok' },
+          { label: t('shell.strip.fileFence'), value: t('shell.strip.unchanged'), tone: 'ok' },
         ]),
       })
     }
@@ -642,15 +662,15 @@
       {
         key: 'svg',
         kind: 'boolean',
-        label: '渲染 SVG 代码块',
-        hint: '严格消毒后以静态图片展示，不执行脚本；块头可在 代码 / 图示 间切换。',
+        label: t('visualize.svg.label'),
+        hint: t('visualize.svg.hint'),
         fallback: VISUALIZE_DEFAULTS.svg,
       },
       {
         key: 'mermaid',
         kind: 'boolean',
-        label: '渲染 Mermaid 代码块',
-        hint: '首次出现时才懒加载内置 mermaid 11.17.0（无 CDN），strict 安全模式。',
+        label: t('visualize.mermaid.label'),
+        hint: t('visualize.mermaid.hint'),
         fallback: VISUALIZE_DEFAULTS.mermaid,
       },
     ]
@@ -664,18 +684,20 @@
     /** The visualize status line: both switches + render counters + mermaid runtime state. */
     function describeVisualize(value) {
       var stats = visualizeStatsStore.get()
-      var svgOn = value.svg !== false ? '开启' : '关闭'
-      var mmdOn = value.mermaid !== false ? '开启' : '关闭'
+      var svgOn = value.svg !== false ? t('common.on') : t('common.off')
+      var mmdOn = value.mermaid !== false ? t('common.on') : t('common.off')
       var runtime =
-        stats.mermaidState === 'ready' ? '运行时就绪'
-        : stats.mermaidState === 'loading' ? '运行时加载中'
-        : stats.mermaidState === 'failed' ? '运行时加载失败'
-        : '运行时未加载'
-      var rendered = stats.svg + stats.mermaid
-      var probe = '已渲染 ' + rendered + ' 张（svg ' + stats.svg + ' / mermaid ' + stats.mermaid
-      if (stats.errors > 0) probe += '，失败 ' + stats.errors
-      probe += '）'
-      return 'SVG 围栏：' + svgOn + ' ｜ Mermaid 围栏：' + mmdOn + ' · ' + runtime + ' · ' + probe
+        stats.mermaidState === 'ready' ? t('visualize.runtime.ready')
+        : stats.mermaidState === 'loading' ? t('visualize.runtime.loading')
+        : stats.mermaidState === 'failed' ? t('visualize.runtime.failed')
+        : t('visualize.runtime.missing')
+      return summaryLine([
+        'svg ' + svgOn,
+        'mermaid ' + mmdOn,
+        runtime,
+        t('visualize.count.rendered', { n: stats.svg + stats.mermaid }),
+        stats.errors > 0 ? t('visualize.count.errors', { n: stats.errors }) : '',
+      ])
     }
 
     function VisualizePage(props) {
@@ -687,13 +709,13 @@
         }))
       }
       var vs = visualizeStatsStore.get()
-      var runtimeText = { ready: '就绪', loading: '加载中', failed: '加载失败' }[vs.mermaidState] || '未加载'
+      var runtimeText = { ready: t('visualize.runtime.shortReady'), loading: t('visualize.runtime.shortLoading'), failed: t('visualize.runtime.shortFailed') }[vs.mermaidState] || t('visualize.runtime.shortMissing')
       var runtimeTone = { ready: 'ok', loading: 'warn', failed: 'err' }[vs.mermaidState] || 'idle'
       var visItems = [
-        { label: 'Mermaid 运行时', value: runtimeText, tone: runtimeTone, pulse: vs.mermaidState === 'loading' },
-        { label: '已渲染', value: 'svg ' + vs.svg + ' · mermaid ' + vs.mermaid, tone: vs.svg + vs.mermaid > 0 ? 'ok' : 'idle' },
+        { label: t('visualize.strip.runtime'), value: runtimeText, tone: runtimeTone, pulse: vs.mermaidState === 'loading' },
+        { label: t('visualize.rendered'), value: t('visualize.count.svgMermaid', { svg: vs.svg, mermaid: vs.mermaid }), tone: vs.svg + vs.mermaid > 0 ? 'ok' : 'idle' },
       ]
-      if (vs.errors > 0) visItems.push({ label: '失败', value: vs.errors, tone: 'err' })
+      if (vs.errors > 0) visItems.push({ label: t('visualize.errors'), value: vs.errors, tone: 'err' })
       return React.createElement(SettingsForm, { form: form, fields: VISUALIZE_FIELDS, coerce: coerceVisualize, after: statusStrip(visItems) })
     }
 
@@ -701,16 +723,12 @@
      * 0.4.49：官方替代说明（DSH 已内建「自动化任务」dsh-schedule，完整覆盖
      * 本组件功能且更强），在 timer 设置页顶部展示；本行默认 disabled: true。
      */
-    var TIMER_OFFICIAL_NOTE =
-      'dsh-schedule 支持一次性 / 每 N 秒 / 每天 / 每周 / cron，跨重启持久，并能投递回原会话。' +
-      '本计时器组件（内存倒计时，重启即清）已被它完整覆盖，故默认停用；需要旧行为时，同时打开行开关与下方开关。'
-
     var TIMER_FIELDS = [
       {
         key: 'enabled',
         kind: 'boolean',
-        label: '启用计时器（模型工具）',
-        hint: '开启后模型可用 timer_set / timer_cancel 定时提醒；总开关以本行的行开关为准。',
+        label: t('timer.enabled.label'),
+        hint: t('timer.enabled.hint'),
         fallback: TIMER_DEFAULTS.enabled,
       },
     ]
@@ -721,8 +739,8 @@
     }
 
     function describeTimer(value) {
-      var on = value.enabled !== false ? '开启' : '关闭'
-      return '计时器（模型工具）：' + on + ' · 模型可 timer_set/timer_cancel 定时提醒'
+      var on = value.enabled !== false ? t('common.on') : t('common.off')
+      return summaryLine([on, value.enabled !== false ? t('timer.summary.timerSet') : ''])
     }
 
     function TimerPage(props) {
@@ -736,7 +754,7 @@
         form: form,
         fields: TIMER_FIELDS,
         coerce: coerceTimer,
-        before: callout('accent', '官方已内建「自动化任务」', TIMER_OFFICIAL_NOTE),
+        before: callout('accent', t('timer.officialTitle'), t('timer.officialNote')),
       })
     }
 
@@ -744,35 +762,35 @@
       {
         key: 'completeSound',
         kind: 'boolean',
-        group: '任务完成',
-        groupHint: '一轮处理结束时',
-        label: '提示音',
-        hint: '播放一段提示音。',
+        group: t('notify.group.complete'),
+        groupHint: t('notify.group.completeHint'),
+        label: t('notify.sound.label'),
+        hint: t('notify.sound.hintComplete'),
         fallback: NOTIFY_DEFAULTS.completeSound,
       },
       {
         key: 'completeNotify',
         kind: 'boolean',
-        group: '任务完成',
-        label: '系统通知',
-        hint: '弹出 OS 级通知，需先授权（见下方测试）。',
+        group: t('notify.group.complete'),
+        label: t('notify.systemNotify.label'),
+        hint: t('notify.systemNotify.hintComplete'),
         fallback: NOTIFY_DEFAULTS.completeNotify,
       },
       {
         key: 'attentionSound',
         kind: 'boolean',
-        group: '需要处理',
-        groupHint: '审批、计划确认、提问时',
-        label: '提示音',
-        hint: '模型在等你时播放提示音。',
+        group: t('notify.group.attention'),
+        groupHint: t('notify.group.attentionHint'),
+        label: t('notify.sound.label'),
+        hint: t('notify.sound.hintAttention'),
         fallback: NOTIFY_DEFAULTS.attentionSound,
       },
       {
         key: 'attentionNotify',
         kind: 'boolean',
-        group: '需要处理',
-        label: '系统通知',
-        hint: '模型在等你时弹出 OS 级通知。',
+        group: t('notify.group.attention'),
+        label: t('notify.systemNotify.label'),
+        hint: t('notify.systemNotify.hintAttention'),
         fallback: NOTIFY_DEFAULTS.attentionNotify,
       },
     ]
@@ -784,24 +802,31 @@
 
     function describeNotify(value) {
       var stats = notifyStatsStore.get()
-      var cs = value.completeSound === true ? '声' : '—'
-      var cn = value.completeNotify === true ? '通知' : '—'
-      var as = value.attentionSound === true ? '声' : '—'
-      var an = value.attentionNotify === true ? '通知' : '—'
+      // 一组的两个开关合成一个词：声+通知 / 仅声 / 仅通知 / 关。
+      // 旧的「声:声/通知:—」把开关名和开关值挤在一起，读一遍要拆两遍。
+      function channel(sound, notify) {
+        if (sound && notify) return t('notify.channel.both')
+        if (sound) return t('notify.channel.soundOnly')
+        if (notify) return t('notify.channel.notifyOnly')
+        return t('notify.channel.off')
+      }
+      var complete = channel(value.completeSound === true, value.completeNotify === true)
+      var attention = channel(value.attentionSound === true, value.attentionNotify === true)
       var permText =
         stats.permission === 'granted'
-          ? '已授权'
+          ? t('notify.perm.granted')
           : stats.permission === 'denied'
-            ? '被拒绝'
+            ? t('notify.perm.denied')
             : stats.permission === 'unsupported'
-              ? '不支持'
-              : '未询问'
-      var probe = '会话 ' + (stats.sessions || 0)
-      if (stats.lastComplete) probe += ' · 最近完成 ' + stats.lastComplete
-      if (stats.lastAttention) probe += ' · 最近待处理 ' + stats.lastAttention + '（' + attentionLabel(stats.lastAttentionKind) + '）'
-      if (stats.lastTest) probe += ' · 最近测试 ' + stats.lastTest
-      if (stats.error) probe += ' · ' + stats.error
-      return '完成[声:' + cs + '/通知:' + cn + '] 待处理[声:' + as + '/通知:' + an + '] · 通知权限 ' + permText + ' · ' + probe
+              ? t('notify.perm.unsupported')
+              : t('notify.perm.unprompted')
+      return summaryLine([
+        t('notify.strip.complete', { channel: complete }),
+        t('notify.strip.attention', { channel: attention }),
+        t('notify.strip.perm', { perm: permText }),
+        stats.lastAttention ? t('notify.strip.last', { kind: attentionLabel(stats.lastAttentionKind) }) : '',
+        stats.error,
+      ])
     }
 
     function NotifyPage(props) {
@@ -814,25 +839,26 @@
       }
       var stats = notifyStatsStore.get()
       var perm = stats.permission
+      var permLabel = t('notify.strip.permLabel')
       var permItem =
         perm === 'granted'
-          ? { label: '系统通知权限', value: '已授权', tone: 'ok' }
+          ? { label: permLabel, value: t('notify.perm.granted'), tone: 'ok' }
           : perm === 'denied'
-            ? { label: '系统通知权限', value: '被拒绝', tone: 'err' }
+            ? { label: permLabel, value: t('notify.perm.denied'), tone: 'err' }
             : perm === 'unsupported'
-              ? { label: '系统通知权限', value: '不支持', tone: 'idle' }
-              : { label: '系统通知权限', value: '未询问', tone: 'idle' }
+              ? { label: permLabel, value: t('notify.perm.unsupported'), tone: 'idle' }
+              : { label: permLabel, value: t('notify.perm.unprompted'), tone: 'idle' }
       var items = [permItem]
-      if (stats.lastComplete) items.push({ label: '最近完成', value: stats.lastComplete, tone: 'ok' })
-      if (stats.lastAttention) items.push({ label: '最近待处理', value: stats.lastAttention + '（' + attentionLabel(stats.lastAttentionKind) + '）', tone: 'warn' })
-      if (stats.lastTest) items.push({ label: '最近测试', value: stats.lastTest, tone: 'idle' })
-      if (stats.error) items.push({ label: '错误', value: stats.error, tone: 'err' })
+      if (stats.lastComplete) items.push({ label: t('notify.strip.lastComplete'), value: stats.lastComplete, tone: 'ok' })
+      if (stats.lastAttention) items.push({ label: t('notify.strip.lastAttention'), value: stats.lastAttention + '（' + attentionLabel(stats.lastAttentionKind) + '）', tone: 'warn' })
+      if (stats.lastTest) items.push({ label: t('notify.strip.lastTest'), value: stats.lastTest, tone: 'idle' })
+      if (stats.error) items.push({ label: t('common.error'), value: stats.error, tone: 'err' })
       var permHint =
         perm === 'denied'
-          ? '权限被拒绝：请到浏览器 / 系统设置里允许本站通知。'
+          ? t('notify.permHint.denied')
           : perm === 'granted'
-            ? '已授权，开启「系统通知」开关即可弹出。'
-            : '提示音无需权限；系统通知需先点「测试」授权一次。'
+            ? t('notify.permHint.granted')
+            : t('notify.permHint.default')
       return React.createElement(SettingsForm, {
         form: form,
         fields: NOTIFY_FIELDS,
@@ -843,7 +869,7 @@
           React.createElement(
             'div',
             { className: 'dshp-footer' },
-            React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: testNotify }, '测试提示音 + 通知'),
+            React.createElement('button', { type: 'button', className: 'dshp-btn', onClick: testNotify }, t('notify.test')),
             React.createElement('span', { className: 'dshp-note' }, permHint),
           ),
           statusStrip(items),
