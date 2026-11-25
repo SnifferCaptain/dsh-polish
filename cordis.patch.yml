@@ -1,6 +1,6 @@
 # dsh-polish bundle patch.
 #
-# Seventeen Loader rows: one bundle row plus sixteen independently toggleable
+# Eighteen Loader rows: one bundle row plus seventeen independently toggleable
 # components. Each row's
 # `name` must be an importable module specifier (the Loader calls
 # `tree.import(name)`), so the component rows point at subpath exports of this
@@ -32,14 +32,12 @@
     # In-memory countdown self-reminder: timer_set / timer_cancel tools inject a
     # message into the session at fire time (followup -> flush, one model turn).
     # Non-persistent (cleared on restart), minutes granularity, no catch-up.
-    # 0.4.49: DSH now ships the official 自动化任务 (dsh-schedule):
-    # schedule_create/list/update/delete tools + a sidebar task page, with
-    # after / every-N-seconds / daily / weekly / cron selectors, persistence
-    # across host restarts, catch-up of the last missed occurrence, delivery
-    # history, and a session-row clock mark in the SAME sidebar.session.row.
-    # leading seat as this component's icon. It fully covers this component's
-    # functionality and supersedes it, so the row is disabled by default.
-    # Re-enable the row switch to restore the old in-memory behavior.
+    # 0.4.49: DSH now ships the official 自动化任务 (dsh-schedule): schedule_create/
+    # list/update/delete tools, a sidebar task page with after / every-N-seconds /
+    # daily / weekly / cron selectors, persistence across host restarts, catch-up of
+    # the last missed occurrence, delivery history, and a session-row clock mark in
+    # the same sidebar. It covers this component's functionality, so the row is
+    # disabled by default. Re-enable the row switch to restore the old in-memory behavior.
     - id: 'dsh-polish:timer'
       name: 'dsh-polish/timer'
       disabled: true
@@ -114,17 +112,17 @@
       name: 'dsh-polish/session-slim'
       disabled: true
 
-    # Compact uses the selected model: compaction summary calls (manual
-    # /compact, automatic pressure compaction, context-overflow recovery — all
-    # three funnel into one ctx.llm.stream with purpose "compaction") are
-    # re-routed, when stale, to the model the model selector currently holds:
-    # first the session's own modelSelection projection (the composer
-    # selector, written by selectModel the instant the user switches),
-    # falling back to agentDefaultModel.currentSelection(). reasoningEffort is
-    # mirrored to the selection (the old model's effort is rejected outright
-    # when the new model does not support it). Normal conversation steps are
-    # never touched. Row switch is the master switch; no settings form;
-    # read-only route /api/dshp/compact-model/status reports recent reroutes.
+    # Compaction summaries follow the selected model (followSelection, on by
+    # default). Slicing and folding past the declared window (chunkedCompaction)
+    # is OFF by default; when on, a replay that would exceed the model's window
+    # is sliced and folded forward, and a complete summary misjudged as silent
+    # overflow is accepted, not dropped. The row config also has a threshold
+    # guard (pressureGuardEnabled, OFF by default): when on it compacts first, prunes
+    # as a fallback, and if pressure remains logs an error and lets the step through; it never
+    # rejects a step. Auto-retry (autoRetry, OFF by default) retries a failed
+    # AUTOMATIC compaction (pressure / overflow recovery, i.e. inside an open
+    # turn) on its own, while a manual /compact failure stays manual.
+    # autoRetryAttempts / autoRetryDelayMs tune the budget.
     - id: 'dsh-polish:compact-model'
       name: 'dsh-polish/compact-model'
 
@@ -140,26 +138,23 @@
       name: 'dsh-polish/ptc-log-repair'
       disabled: true
 
-    # Compaction enforcer (hard-threshold butler): on every agent/pre-step it
-    # measures pressure as max(meter measurement, last real server-reported
-    # usage) x safety factor against floor(contextWindow x thresholdRatio);
-    # over threshold it prunes then forces compactIfNeeded('pressure'),
-    # re-measures, and when the context cannot be brought under the threshold
-    # it returns {kind:'reject'} WITHOUT calling next() — the turn stops with
-    # an error log instead of silently sending an over-window request (which
-    # built-in compaction-basic does: it swallows compaction failures and
-    # continues the turn). agent/request-error adds an overflow-recovery path
-    # that retries ONLY when the surface really shrank (replaceGeneration
-    # advanced). Known limits (documented in the component header): it cannot
-    # fix pi-ai's silent-overflow misjudgement or the 4-chars/token estimate;
-    # with a wrongly declared window the strategy is prune + reject. Its
-    # thresholdRatio should not be set below compaction-basic's own threshold
-    # (its compactIfNeeded gates on its own ratio and returns null below it).
-    # Recommended pairing: compaction-basic auto: false (single automatic
-    # path); without that config change this row acts as the supervisor after
-    # the built-in automatic compaction (registration order puts it later).
-    # Disabled by default — the row switch is the master switch; dryRun gives
-    # a warn-only rehearsal of the threshold before enforcing.
-    - id: 'dsh-polish:compaction-enforcer'
-      name: 'dsh-polish/compaction-enforcer'
-      disabled: true
+    # Better Model Config: extends the OFFICIAL Models page (Models > Providers
+    # > custom provider card) in place: per-model API protocol (moving the model
+    # to a sibling route on the same gateway), fill-empty-field from the pi-ai
+    # catalog + price table, the /v1 address fix, and a thinking switch (it
+    # allows the model's thinking to be toggled; the official 推理等级 still sets
+    # the effort depth). No second editor; the Host half serves the read-only
+    # reference table at /api/dshp/better-model-config/reference and registers
+    # nothing else.
+    - id: 'dsh-polish:better-model-config'
+      name: 'dsh-polish/better-model-config'
+
+    # P0-2: observe the durable Session list and re-attach persisted sessions
+    # whose workspace membership account was lost. It never detaches or edits
+    # session logs, and records membership shrink diagnostics.
+    #
+    # Note: this is compensation, not root-cause interception. The writer that
+    # overwrites the table with an incomplete snapshot lives in core; a plugin
+    # cannot veto that write, so the guard re-attaches afterwards.
+    - id: 'dsh-polish:workspace-guard'
+      name: 'dsh-polish/workspace-guard'

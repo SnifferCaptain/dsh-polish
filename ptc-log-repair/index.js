@@ -20,7 +20,8 @@
  *     maxAgeDays 天内修改过的日志，赶在用户点开之前先修好。
  *
  * 落盘安全：同目录临时文件 → 原子 rename；覆盖前备份成
- *   session.v4.jsonl.zstd.corrupt-<时间戳>（保留最近 3 份）；文件被占用
+ *   session.v4.jsonl.zstd.corrupt-<时间戳>（每个会话最多留 3 份，且只留 7 天，
+ *   超期的在下次修复或启动清扫时删除）；文件被占用
  *   时放弃并原样抛错，不留半成品。健康文件零改动（不重压、不动 mtime），
  *   重复修复第二次 no-op。
  *
@@ -32,7 +33,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { repairFile } from './repair.js'
+import { repairFile, sweepBackups } from './repair.js'
 
 const CORRUPTION_MARKER = 'PTC dispatch repeats subCallId'
 const RAW_LOG_RE = /\(raw log: (.+?)\)\s*$/
@@ -119,10 +120,24 @@ export function apply(ctx, config = DEFAULTS) {
     target.open = original
   }, 'ptc-log-repair: restore sessionPersistence.open')
 
+  // 备份保留策略：启动 5 秒后清一次过期的 .corrupt-* 备份（与 fullScanOnStart 无关，
+  // 只做目录名检查，不读文件内容）。
+  const sweepRoot = config?.root ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh', 'sessions')
+  const sweepTimer = setTimeout(() => {
+    try {
+      sweepBackups(sweepRoot)
+    } catch (error) {
+      logger.warn(`[ptc-log-repair] backup sweep failed: ${String(error)}`)
+    }
+  }, 5000)
+  ctx.effect(() => () => clearTimeout(sweepTimer), 'ptc-log-repair: cancel backup sweep')
+
   if (config?.fullScanOnStart) {
     const root = config.root ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.dsh', 'sessions')
     const maxAgeMs = (config.maxAgeDays ?? 30) > 0 ? (config.maxAgeDays ?? 30) * 24 * 3600 * 1000 : Infinity
     const concurrency = Math.max(1, Math.min(8, config.scanConcurrency ?? 4))
+    // 卸载时置位：扫描每处理一个文件检查一次，避免卸载后仍在跑。
+    let stopped = false
     const timer = setTimeout(() => {
       void (async () => {
         const candidates = []
@@ -139,7 +154,7 @@ export function apply(ctx, config = DEFAULTS) {
         let skipped = 0
         let cursor = 0
         async function worker() {
-          while (cursor < candidates.length) {
+          while (!stopped && cursor < candidates.length) {
             const file = candidates[cursor++]
             const report = repairFile(file)
             if (report.changed) {
@@ -149,12 +164,17 @@ export function apply(ctx, config = DEFAULTS) {
               skipped++
               logger.warn(`[ptc-log-repair] skipped ${file}: ${report.reason}`)
             }
+            // 让出事件循环：repairFile 是同步 IO，连续处理会卡住宿主。
+            await new Promise((resolve) => setImmediate(resolve))
           }
         }
         await Promise.all(Array.from({ length: concurrency }, worker))
         logger.info(`[ptc-log-repair] startup scan done: ${repaired} repaired, ${skipped} skipped`)
       })().catch((error) => logger.warn(`[ptc-log-repair] startup scan failed: ${String(error)}`))
     }, 5000)
-    ctx.effect(() => () => clearTimeout(timer), 'ptc-log-repair: cancel startup scan')
+    ctx.effect(() => () => {
+      stopped = true
+      clearTimeout(timer)
+    }, 'ptc-log-repair: cancel startup scan')
   }
 }

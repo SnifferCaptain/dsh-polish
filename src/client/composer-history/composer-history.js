@@ -173,7 +173,20 @@
         sel.addRange(range)
       }
 
+      // Our own fills are DOM writes too (execCommand and the synthetic
+      // beforeinput fallback), so setText marks them: a beforeinput that fires
+      // while a fill is in progress is ours, not the user's edit.
+      var ownWriteDepth = 0
       function setText(input, text) {
+        ownWriteDepth += 1
+        try {
+          setTextRaw(input, text)
+        } finally {
+          ownWriteDepth -= 1
+        }
+      }
+
+      function setTextRaw(input, text) {
         // Preferred: the composer's own inputActions.setDraft(text). It is DSH's
         // editor.update path — it sets the FULL draft for any text (including
         // multi-line, which the DOM path mangles) and, crucially, clears it for
@@ -247,7 +260,10 @@
         function pageWith(throughSeq) {
           var request = { address: address, throughSeq: throughSeq, maxMessages: HISTORY_PAGE_MAX }
           return Promise.resolve(remoteSession.page(request)).then(function (response) {
-            if (!response || response.ok !== true || !response.value || !response.value.records) return null
+            // A failed read must throw: a null page used to be cached as an
+            // empty history for the whole mount, so one transient error hid
+            // every message until the composer remounted.
+            if (!response || response.ok !== true || !response.value || !response.value.records) throw new Error('history page unavailable')
             var value = response.value
             return {
               list: extractUserMessages(value.records),
@@ -264,21 +280,78 @@
             asOf: asOf,
           }
         }
-        return Promise.resolve(remoteSession.projections({ sessionId: sessionId }))
+        return Promise.resolve(remoteSession.projections({ sessionId: sessionId })).then(function (projection) {
+          // No asOf means no stable anchor. Throw instead of reading from seq 0,
+          // which would cache an empty history.
+          if (!projection || projection.ok !== true || !projection.value || typeof projection.value.asOfSeq !== 'number') {
+            throw new Error('history anchor unavailable')
+          }
+          var asOf = projection.value.asOfSeq
+          return pageWith(asOf).then(function (page) {
+            return settle(page, asOf)
+          })
+        })
+      }
+
+      /**
+       * Pull the user messages written after the cached anchor, so a message
+       * sent after the first fetch shows up in ↑ without remounting. Only
+       * events newer than h.asOf are kept (no duplicates). Returns how many
+       * messages were prepended. On any failure the anchor is left alone, so
+       * the next ↑ retries.
+       */
+      function refreshTail(sessionId, remoteSession) {
+        var h = cache[sessionId]
+        if (!h) return Promise.resolve(0)
+        if (h.refreshing) return h.refreshing
+        h.refreshing = Promise.resolve(remoteSession.projections({ sessionId: sessionId }))
           .then(function (projection) {
-            var asOf =
-              projection && projection.ok === true && projection.value && typeof projection.value.asOfSeq === 'number'
-                ? projection.value.asOfSeq
-                : 0
-            return pageWith(asOf).then(function (page) {
-              return settle(page, asOf)
+            if (!projection || projection.ok !== true || !projection.value || typeof projection.value.asOfSeq !== 'number') return 0
+            var newAsOf = projection.value.asOfSeq
+            if (newAsOf <= h.asOf) return 0
+            var anchor = h.asOf
+            var fresh = []
+            var throughSeq = newAsOf
+            var pages = 0
+            function next() {
+              pages += 1
+              return Promise.resolve(remoteSession.page({ address: { kind: 'session', sessionId: sessionId }, throughSeq: throughSeq, maxMessages: HISTORY_PAGE_MAX })).then(function (response) {
+                if (!response || response.ok !== true || !response.value || !response.value.records) throw new Error('history tail unavailable')
+                var value = response.value
+                var newer = []
+                for (var i = 0; i < value.records.length; i++) {
+                  var ev = value.records[i] && value.records[i].event
+                  if (ev && typeof ev.seq === 'number' && ev.seq > anchor) newer.push(value.records[i])
+                }
+                fresh = newer.concat(fresh)
+                var oldest = minSeqOf(value.records)
+                // Stop when the page reaches the anchor, runs out, or 10 pages in.
+                if (value.hasMore !== true || oldest === null || oldest <= anchor || pages >= 10) return null
+                throughSeq = oldest - 1
+                return next()
+              })
+            }
+            return next().then(function () {
+              var added = extractUserMessages(fresh)
+              // In-place prepend: a live recall holds this same array.
+              if (added.length > 0) {
+                var merged = added.concat(h.list)
+                h.list.length = 0
+                for (var m = 0; m < merged.length && m < HISTORY_RECALL_MAX; m++) h.list.push(merged[m])
+              }
+              h.asOf = newAsOf
+              setHistoryStats({ lastCount: h.list.length, lastError: '' })
+              return added.length
             })
           })
           .catch(function () {
-            return pageWith(0).then(function (page) {
-              return settle(page, 0)
-            })
+            return 0
           })
+          .then(function (added) {
+            h.refreshing = null
+            return added
+          })
+        return h.refreshing
       }
 
       // Pre-fetch this session's history when its composer gains focus, so the
@@ -377,6 +450,35 @@
         return h.deep
       }
 
+      var beginning = null // sessionId whose recall is being set up (guards a double ↑)
+
+      function beginRecall(input, sessionId, remoteSession) {
+        if (beginning === sessionId) return
+        beginning = sessionId
+        loadHistory(sessionId, remoteSession)
+          .then(function () {
+            return refreshTail(sessionId, remoteSession)
+          })
+          .then(function () {
+            var entry = cache[sessionId]
+            var list = entry ? entry.list : null
+            if (!list || list.length === 0) return
+            // The user may have typed or moved focus while the read was in flight.
+            if (focusInput() !== input || currentText(input).replace(/\s+/g, '') !== '') return
+            recall = { sessionId: sessionId, list: list, index: 0 }
+            guardWrite(input, list[0])
+            setText(input, list[0])
+          })
+          .then(
+            function () {
+              beginning = null
+            },
+            function () {
+              beginning = null
+            },
+          )
+      }
+
       function onKey(event) {
         var key = event.key
         if (key !== 'ArrowUp' && key !== 'ArrowDown' && key !== 'Escape') return
@@ -446,24 +548,10 @@
             return
           }
           if (text.replace(/\s+/g, '') === '') {
-            // Empty field: begin recall — instantly from the cache, else via the
-            // (shared) fetch, which also covers a pre-fetch that is mid-flight.
+            // Empty field: begin recall. The cache is topped up with messages
+            // sent since it was filled, then the newest entry is written.
             event.preventDefault()
-            var entry = cache[sessionId]
-            var list = entry ? entry.list : null
-            if (list && list.length > 0) {
-              recall = { sessionId: sessionId, list: list, index: 0 }
-              guardWrite(input, list[0])
-              setText(input, list[0])
-            } else {
-              loadHistory(sessionId, remoteSession).then(function (l) {
-                if (l && l.length > 0 && focusInput() === input) {
-                  recall = { sessionId: sessionId, list: l, index: 0 }
-                  guardWrite(input, l[0])
-                  setText(input, l[0])
-                }
-              })
-            }
+            beginRecall(input, sessionId, remoteSession)
             return
           }
           // Else: a plain (non-recall) draft -> leave the caret up to the browser.
@@ -510,12 +598,38 @@
         recall = null
       }
 
+      // User-edit exit, first line of defence: `beforeinput` fires before the
+      // editor (Lexical) handles the change. Lexical usually cancels the native
+      // input event, so a deletion may never reach onInput below. A capture
+      // listener sees every typed, deleted, pasted or cut change. Our own fills
+      // are skipped through ownWriteDepth.
+      function onBeforeInput(event) {
+        if (enabled !== true || recall === null) return
+        if (ownWriteDepth > 0) return
+        var input = event && event.target
+        if (!input) return
+        var sessionId = sessionIdOf(input)
+        if (!sessionId || recall.sessionId !== sessionId) return
+        recall = null
+      }
+
+      // Undo and redo rewrite the field too. Treat them as an edit.
+      function onUndoKey(event) {
+        if (enabled !== true || recall === null) return
+        if (!(event.ctrlKey || event.metaKey)) return
+        var k = String(event.key || '').toLowerCase()
+        if (k !== 'z' && k !== 'y') return
+        recall = null
+      }
+
       function start() {
         if (started) return
         if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return
         started = true
         document.addEventListener('keydown', onKey, true)
+        document.addEventListener('keydown', onUndoKey, true)
         document.addEventListener('focusin', onFocus, true)
+        document.addEventListener('beforeinput', onBeforeInput, true)
         document.addEventListener('input', onInput, true)
       }
 
@@ -524,7 +638,9 @@
         if (typeof document === 'undefined' || typeof document.removeEventListener !== 'function') return
         started = false
         document.removeEventListener('keydown', onKey, true)
+        document.removeEventListener('keydown', onUndoKey, true)
         document.removeEventListener('focusin', onFocus, true)
+        document.removeEventListener('beforeinput', onBeforeInput, true)
         document.removeEventListener('input', onInput, true)
         recall = null
       }

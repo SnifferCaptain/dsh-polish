@@ -19,6 +19,8 @@
 **/.agents/
 
 # 本地脚本、临时输出、测试日志与个人工作笔记
+/notes/
+/tools/
 /todo.md
 _h*.txt
 _bump*.cjs
@@ -34,3 +36,7 @@ _artifacts/
 Thumbs.db
 .vscode/
 .idea/
+
+# compact-model harness scratch
+_tmp-cm-home/
+_tmp-*.cjs

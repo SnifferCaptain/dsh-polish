@@ -240,24 +240,70 @@ export function repairBuffer(buf) {
   return { changed: true, out, renamed }
 }
 
+// Retention for `.corrupt-*` backups: at most BACKUP_KEEP per session log, and
+// none older than BACKUP_MAX_AGE_MS. A backup is the pre-repair bytes of one
+// log, kept only for diagnosis or rollback. The repair itself is semantic
+// (renames only), so the backup has no further use after the retention window.
 const BACKUP_KEEP = 3
+const BACKUP_MAX_AGE_MS = 7 * 24 * 3600 * 1000
+const BACKUP_TIME_RE = /\.corrupt-(\d{8})-(\d{6})(\d{3})$/
 
-/** Prune old .corrupt-* backups next to `logPath`, keeping the newest BACKUP_KEEP. */
-function pruneBackups(logPath) {
+/** Epoch ms of a backup, read from its name; falls back to the file mtime. */
+function backupTime(dir, name) {
+  const m = BACKUP_TIME_RE.exec(name)
+  if (m) {
+    const [d, t, ms] = [m[1], m[2], m[3]]
+    return new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8), +t.slice(0, 2), +t.slice(2, 4), +t.slice(4, 6), +ms).getTime()
+  }
+  try { return fs.statSync(path.join(dir, name)).mtimeMs } catch { return NaN }
+}
+
+/**
+ * Delete the `.corrupt-*` backups of `logPath` that are beyond the newest
+ * BACKUP_KEEP or older than BACKUP_MAX_AGE_MS. Best effort: a failed delete is
+ * skipped and retried at the next prune.
+ */
+function pruneBackups(logPath, now = Date.now()) {
   const dir = path.dirname(logPath)
   const base = path.basename(logPath)
-  const backups = fs.readdirSync(dir)
-    .filter((name) => name.startsWith(`${base}.corrupt-`))
-    .sort()
-  for (const stale of backups.slice(0, Math.max(0, backups.length - BACKUP_KEEP))) {
+  let names
+  try {
+    names = fs.readdirSync(dir).filter((name) => name.startsWith(`${base}.corrupt-`)).sort()
+  } catch {
+    return
+  }
+  const doomed = new Set(names.slice(0, Math.max(0, names.length - BACKUP_KEEP)))
+  for (const name of names) {
+    const t = backupTime(dir, name)
+    if (Number.isFinite(t) && now - t > BACKUP_MAX_AGE_MS) doomed.add(name)
+  }
+  for (const stale of doomed) {
     try { fs.unlinkSync(path.join(dir, stale)) } catch { /* best effort */ }
   }
 }
 
+/**
+ * Apply the retention rule to every session under `root`. Walks directories
+ * once and only looks at names, so the cost is one readdir per session folder.
+ */
+export function sweepBackups(root, now = Date.now()) {
+  const visit = (dir) => {
+    let entries
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    const logs = new Set()
+    for (const entry of entries) {
+      if (entry.isDirectory()) visit(path.join(dir, entry.name))
+      else if (entry.isFile() && entry.name.includes('.corrupt-')) logs.add(path.join(dir, entry.name.slice(0, entry.name.indexOf('.corrupt-'))))
+    }
+    for (const logPath of logs) pruneBackups(logPath, now)
+  }
+  visit(root)
+}
+
 function timestamp() {
   const d = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  const pad = (n, w = 2) => String(n).padStart(w, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${pad(d.getMilliseconds(), 3)}`
 }
 
 /**

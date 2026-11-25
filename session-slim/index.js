@@ -1299,6 +1299,21 @@ export function apply(ctx, config) {
     checkCancel(null)
   }
 
+  // replacement 应继承瘦身开始时真正生效的模式，而不是可能过期的行缓存。
+  // mode-switch recompose 会立刻更新 live Agent；它的 durable event/projection
+  // 可能还没赶上 session-slim 的轮询缓存，所以 live composition 优先，行值兜底。
+  function resolveCurrentAgentPreset(ctx, sessionId, fallback) {
+    var preset = typeof fallback === 'string' ? fallback : ''
+    try {
+      var agent = ctx && ctx.agents && typeof ctx.agents.get === 'function' ? ctx.agents.get(sessionId) : null
+      if (agent && agent.ctx && ctx.agentPresets && typeof ctx.agentPresets.composedPreset === 'function') {
+        var current = ctx.agentPresets.composedPreset(agent.ctx)
+        if (typeof current === 'string' && current) return current
+      }
+    } catch (error) {}
+    return preset
+  }
+
   // ---- 瘦身主流程（每步失败即抛错，job 记录 phase + error）----
   async function slimOne(job) {
     var id = job.sessionId
@@ -1541,7 +1556,40 @@ export function apply(ctx, config) {
       content: [{ type: 'text', text: CHECKPOINT_PREAMBLE + '\n\n' + SUMMARY_OPEN_TAG + '\n' + slim.summary + '\n' + SUMMARY_CLOSE_TAG }],
       source: { kind: 'dsh-polish-session-slim' },
     })
-    var seedSystemMessage = createSystemMessage('')
+    // P0-1：受保护 head 必须带**真实** system 文本，不能用空字符串。
+    //
+    // 空 system/message 是 DSH 自己从不产生的形状：客户端 chat 定义里的
+    // systemMessageDefinition.buildViewNode 对 `state.text === ''` 直接
+    // `return null`，而 conversation 物化器把「已物化过的目标返回 null」判为
+    //   conversation Definition "chat" withdrew materialized target "chat"
+    // —— 也就是打开历史分页时的那个报错。旧 seed 用 createSystemMessage('')
+    // 造受保护 head，正好踩在这个分支上。
+    //
+    // 修复：把源会话 surface 里最后一条 system/message 的真实文本作为 head
+    // （DSH 自己每轮写的也是同样的 system/message，形状与核心一致）。源会话
+    // 确实没有 system 文本时才兜底为空，并记一条可见警告。
+    var seedSystemText = ''
+    try {
+      var seedSurfaceEvents = surface && Array.isArray(surface.events) ? surface.events : []
+      for (var seedIndex = 0; seedIndex < seedSurfaceEvents.length; seedIndex++) {
+        var seedEvent = seedSurfaceEvents[seedIndex]
+        if (!seedEvent || seedEvent.type !== 'system/message') continue
+        var seedDerived = deriveMessage(seedEvent)
+        if (!seedDerived || !Array.isArray(seedDerived.content)) continue
+        var seedText = ''
+        for (var seedBlock = 0; seedBlock < seedDerived.content.length; seedBlock++) {
+          var seedPiece = seedDerived.content[seedBlock]
+          if (seedPiece && seedPiece.type === 'text' && typeof seedPiece.text === 'string') seedText += seedPiece.text
+        }
+        if (seedText !== '') seedSystemText = seedText
+      }
+    } catch (seedSystemError) {}
+    if (seedSystemText === '') {
+      job.warnings = (job.warnings || []).concat([
+        '源会话没有可用的 system 提示词文本；replacement 的受保护 head 为空，客户端打开历史时可能把它当作已撤回的节点。',
+      ])
+    }
+    var seedSystemMessage = createSystemMessage(seedSystemText)
     var seedNow = Date.now()
     // 0.4.98：replacement 必须以一个**受保护的 system/message surface head** 出生。
     //
@@ -1551,10 +1599,10 @@ export function apply(ctx, config) {
     // DSH 重启、重新加载 session.v4.jsonl.zstd 时失败：
     //   system/message requires a protected first surface head
     //
-    // 修法：用 createSystemMessage('') 创建一个**空的、不改变模型内容**的 system
-    // head，放在 seed turn 的 step 1；checkpoint user/message 放在其后。空 system
-    // message 不会产生模型文本，但会建立 DSH 要求的 protectedHead。随后真实轮次
-    // 的 system/message 可以正常追加或替换这个受保护的 surface。
+    // 修法（0.4.98 起）：seed turn 的 step 1 先放一条 system/message 建立
+    // protectedHead，checkpoint user/message 放在其后，真实轮次的 system/message
+    // 才能正常追加或替换这个受保护的 surface。
+    // 注意不能用空文本（见上面 P0-1）——head 带源会话真实的 system 提示词文本。
     //
     // 同时让 Session 自己在 inheritedEventCount 位置追加唯一的 session/end-seed，
     // 不再把 marker 手工放进 seed 后又把 cut 写成 4，避免产生重复 end-seed。
@@ -1598,7 +1646,7 @@ export function apply(ctx, config) {
     // 该模式的工具（tool-fs / tool-bash / …）一个都没有。
     // 修法：用 sessionController.composeAgent 的同一个 setup 回调（拿不到
     // controller 时退回 agentPresets.mount）。
-    var presetId = row && row.agentPreset ? String(row.agentPreset) : ''
+    var presetId = resolveCurrentAgentPreset(ctx, id, row && row.agentPreset ? String(row.agentPreset) : '')
     var resolvedPresetId = presetId
     var composition = null
     if (presetId) {
@@ -1614,6 +1662,9 @@ export function apply(ctx, config) {
         composition = null
       }
     }
+    // Seed 元数据也写入归一化后的当前 preset；不能让旧 row projection 覆盖 live mode。
+    if (resolvedPresetId) seedMeta.agentPreset = resolvedPresetId
+    else delete seedMeta.agentPreset
     // setup 只做一件事：把 preset 挂到新 agent 的作用域上（工具随之可见）。
     // 不用 controller 的 setup——它还会调 installSelection，seeded 会话上那一步
     // 可能抛「modelSelection projection 未注册」；模型由随后的 selectModel 负责。

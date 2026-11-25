@@ -1,7 +1,6 @@
 {
   "name": "dsh-polish",
-  "version": "1.4.0",
-  "description": "DSH 增强组件集：思考计时/提示预览、↑ 消息召回、工作区 LRU、计时器、通知、模式切换、技能加载、本地 shell、提示词与工具提示、可视化、保持强度、会话瘦身、压缩跟随选择器模型、PTC 日志自愈、压缩硬阈值管家，共 16 个可独立开关的组件。0.4.49 起 timer 默认停用（官方「自动化任务」已覆盖），打开插件行开关即恢复。1.3.1 修复 PTC 自愈算法（三次以上复用、迟到内容更新）。1.3.2 修复 compact-model：切换模型后压缩失败（实时拉取选择器，与正常消息同源），但误把 llm/stream 监听器改成 async 导致所有模型回合报 yield* not async iterable，1.3.3 已修正为同步监听器；1.3.4 修正取数点（本宿主 sessions 是 SessionStore，改为读会话日志的 model/selection 事件）。",
+  "version": "1.5.0",
   "license": "MIT",
   "author": {
     "name": "SnifferCaptain",
@@ -77,21 +76,18 @@
     "./ptc-log-repair": {
       "default": "./ptc-log-repair/index.js"
     },
-    "./compaction-enforcer": {
-      "default": "./compaction-enforcer/index.js"
+    "./better-model-config": {
+      "default": "./better-model-config/index.js"
     },
-    "./locale/zh.json": "./locale/zh.json",
-    "./locale/en.json": "./locale/en.json",
-    "./icon": "./icon.svg",
+    "./workspace-guard": {
+      "default": "./workspace-guard/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
     "lib/client.js",
     "lib/client.mermaid.js",
-    "locale/zh.json",
-    "locale/en.json",
-    "icon.svg",
     "thinking-renderer/",
     "thinking-depth/",
     "composer-history/",
@@ -107,13 +103,15 @@
     "session-slim/",
     "compact-model/",
     "ptc-log-repair/",
-    "compaction-enforcer/",
+    "better-model-config/",
+    "workspace-guard/",
     "skills/",
     "cordis.patch.yml",
     "README.md",
     "README_zh.md"
   ],
   "scripts": {
+    "test": "node test/requirements.cjs && node test/bmc.test.cjs && node test/prompts-host.cjs && node test/compact-model-retry.cjs && node test/skill-loader.cjs && node test/harness.cjs",
     "build:i18n": "node scripts/build-i18n.cjs",
     "build:client": "node scripts/build-i18n.cjs && node scripts/build-host-entry.cjs && node scripts/build-client.cjs && node scripts/build-mermaid-chunk.cjs",
     "check:client": "node scripts/build-i18n.cjs --check && node scripts/build-host-entry.cjs --check && node scripts/build-client.cjs --check && node scripts/build-mermaid-chunk.cjs --check",
@@ -129,6 +127,7 @@
     "@deepseek-ai/dsh-client-ui-chat": ">=0.2.0-rc.2 <0.3.0",
     "@deepseek-ai/dsh-home-paths": ">=0.2.0-rc.1 <0.3.0",
     "@deepseek-ai/dsh-llm": ">=0.2.0-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.2.0-rc.1 <0.3.0",
     "@deepseek-ai/dsh-tools": ">=0.2.0-rc.1 <0.3.0"
   },
   "peerDependenciesMeta": {
@@ -141,6 +140,9 @@
     "@deepseek-ai/dsh-llm": {
       "optional": true
     },
+    "@deepseek-ai/dsh-llm-pi-ai": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-tools": {
       "optional": true
     }
@@ -151,7 +153,8 @@
       "dshReleases": {
         "0.2.0-rc.2": "compatible",
         "0.2.1-rc.1": "compatible",
-        "0.2.1-rc.2": "compatible"
+        "0.2.1-rc.2": "compatible",
+        "0.2.1-rc.5": "compatible"
       }
     },
     "bundle": {

@@ -1,8 +1,9 @@
 {
-  "name": "dsh-polish-compaction-enforcer",
+  "name": "dsh-polish-workspace-guard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "index.js",
   "exports": {
     ".": "./index.js"
   }

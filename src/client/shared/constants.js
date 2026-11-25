@@ -24,6 +24,16 @@
     var ROW_KEY_SHELL_LOCAL = 'dsh-polish#dsh-polish:shell-local'
     var ROW_KEY_VISUALIZE = 'dsh-polish#dsh-polish:visualize'
     var ROW_KEY_PROMPTS = 'dsh-polish#dsh-polish:prompts'
+    var NS_COMPACT_MODEL = 'dsh-polish:compact-model'
+    var ROW_KEY_COMPACT_MODEL = 'dsh-polish#dsh-polish:compact-model'
+    var NS_BMC = 'dsh-polish:better-model-config'
+    var ROW_KEY_BMC = 'dsh-polish#dsh-polish:better-model-config'
+    var NS_SKILL = 'dsh-polish:skill-loader'
+    var ROW_KEY_SKILL = 'dsh-polish#dsh-polish:skill-loader'
+    /** The official pi-ai adapter's settings namespace; also the provider-card slot key. */
+    var NS_PI_AI = 'llm-pi-ai'
+
+    var COMPACT_MODEL_DEFAULTS = { followSelection: true, chunkedCompaction: false, pressureGuardEnabled: false, autoRetry: false, autoRetryAttempts: 2, autoRetryDelayMs: 1200 }
 
     var RENDERER_DEFAULTS = { lines: 4, collapseMs: 140, autoOpen: true, showTime: true, followMs: 300 }
     var DEPTH_DEFAULTS = { showInComposer: true, palette: 'blue-purple', labels: true }

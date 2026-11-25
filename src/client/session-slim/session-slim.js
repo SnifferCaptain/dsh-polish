@@ -107,6 +107,14 @@
       return String(p)
     }
 
+    // 1.4.8: main session ids have a common `session-` prefix; strip it before
+    // shortening so same-title main sessions remain visibly distinguishable.
+    function slimShortSessionId(id) {
+      var value = typeof id === 'string' ? id : ''
+      if (value.indexOf('session-') === 0) value = value.slice(8)
+      return value.slice(0, 8)
+    }
+
     function slimElapsed(ms) {
       if (typeof ms !== 'number' || !isFinite(ms) || ms < 0) return ''
       var sec = Math.floor(ms / 1000)
@@ -656,7 +664,9 @@
           var isCurrent = !!(currentJob && currentJob.sessionId === row.id)
           var isPending = !!slimPendingIds[row.id]
           var nameTitle = (row.cwd ? row.cwd + ' — ' : '') + (row.title || row.id)
-          var buttonLabel = isPending ? t('slim.queueSubmitting') : inQueue ? t('slim.queueQueued') : isCurrent || row.running ? t('slim.queueRunning') + '…' : t('slim.action')
+          var shortSessionId = slimShortSessionId(row.id)
+           var sessionIdTitle = row.id ? t('slim.sessionId.full', { id: row.id }) : ''
+           var buttonLabel = isPending ? t('slim.queueSubmitting') : inQueue ? t('slim.queueQueued') : isCurrent || row.running ? t('slim.queueRunning') + '…' : t('slim.action')
           var buttonDisabled = row.running || inQueue || isCurrent || isPending
           var ctxPct = typeof row.ctxTokens === 'number' && typeof row.ctxWindow === 'number' && row.ctxWindow > 0 ? (row.ctxTokens / row.ctxWindow) * 100 : null
           var ctxTone = ctxPct === null ? 'idle' : ctxPct >= 100 ? 'err' : ctxPct >= 70 ? 'warn' : 'ok'
@@ -676,7 +686,8 @@
           var sub =
             slimProjectName(row) +
             ' · ' + slimFmtBytes(row.fileBytes) +
-            (typeof row.subCount === 'number' && row.subCount > 0 ? t('slim.subAgents', { n: row.subCount }) : '')
+            (typeof row.subCount === 'number' && row.subCount > 0 ? t('slim.subAgents', { n: row.subCount }) : '') +
+             (shortSessionId ? t('slim.sessionId.short', { id: shortSessionId }) : '')
           return React.createElement(
             'tr',
             { key: row.id, 'data-hot': hot ? '1' : undefined, 'data-dim': row.archived ? '1' : undefined },
@@ -684,7 +695,7 @@
               'td',
               { title: nameTitle },
               React.createElement('div', { className: 'dshp-cell-t' }, row.title || '(无标题)'),
-              React.createElement('div', { className: 'dshp-cell-sub dshp-cell-t', title: row.cwd || '' }, sub),
+              React.createElement('div', { className: 'dshp-cell-sub dshp-cell-t', title: sessionIdTitle }, sub),
             ),
             React.createElement(
               'td',

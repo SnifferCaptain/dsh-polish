@@ -25,6 +25,15 @@ import z from '@deepseek-ai/schemastery'
  *   * 静默：effort-only 的变化不触发核心的 [model changed] 通知（pre-step
  *     只比较路由），继承对用户无感知。
  *
+ * 1.4.39 三条硬规则（都来自「明明切了却没变 / 记忆莫名消失」的实际故障）：
+ *   * 层次：只在**轮首**（agent/request payload 的 step === 1，即下一次
+ *     user 输入的第一次请求）记录与继承。轮中后续 step 复用上一步持久化的
+ *     header，这里一律放行——运行中的 loop 不受任何影响。
+ *   * 取服务：llm 用 ctx.get('llm')（本部署行作用域上 ctx.llm 是 undefined，
+ *     只读它会拿不到模型默认值 → carryOnDefault 分支永不成立）。
+ *   * 记忆不被默认值洗掉：请求实际跑在新模型自己的默认值上时（说明这次继承
+ *     没发生），不写记录；只有用户显式选过的值才更新记忆。
+ *
  * 持久化：记录写在本行配置 effortRecords（非 volatile，重启保留）；5s 防抖
  * 写盘 + 行卸载时 best-effort 兜底；最多保留 MAX_SESSIONS 个最近会话
  * （按最近使用顺序淘汰最旧的）。
@@ -145,7 +154,7 @@ const ROW_ID = 'dsh-polish:keep-effort'
 const MAX_SESSIONS = 100
 const FLUSH_INTERVAL_MS = 5000
 // 进诊断快照（只变一次）：patch 文件里的块属于哪一版代码，一眼可辨。
-const VERSION = '1.0.0'
+const VERSION = '1.5.0'
 
 // 0.4.54 装载标记：每次模块装载一行（含 HMR 重载）。日志里有这行而
 // patch 文件无 config 块 → 模块已装载、apply 未执行（行 fiber 激活问题）；
@@ -409,16 +418,28 @@ export function apply(ctx, config) {
       // 「监听有没有被调到」只需一个一次性的时间戳：firstFiredAt 只变一次，
       // 不会让 diag 永远脏。
       if (!diag.firstFiredAt) noteDiag({ firstFiredAt: liveLastAt })
-      // 0.4.54：llm 懒读（不再进 inject——它是激活门槛，拿不到时整行不
-      // 激活）。拿不到 → null → 降级运行；可用性进诊断一次，重启后从
-      // config 块的 llm 字段可辨当时处于哪种模式。
+      // 1.4.39 静默失效修复：0.4.54 只读 ctx.llm，但本部署里行作用域上的
+      // ctx.llm 是 undefined（诊断 llm:false 就是证据），于是
+      //   * effectiveDefaultOf 永远拿不到模型默认值 → decideCarry 的
+      //     「新选择只是新模型默认值」分支永远不成立 → 切模型时 effort 不恢复；
+      //   * record 也补齐不了默认值 → 记忆累积不全。
+      // compact-model 早就改用 ctx.get('llm')，这里对齐同一取法。
       var llm = null
       try {
-        llm = ctx.llm
+        llm = ctx.get ? ctx.get('llm') : null
       } catch (error) {
         llm = null
       }
-      if (diag.llm === undefined) noteDiag({ llm: !!llm })
+      if (!llm) {
+        try {
+          llm = ctx.llm
+        } catch (error) {
+          llm = null
+        }
+      }
+      // 不再「只记第一次」：可用性在启动早期/行重载期间会变，粘住的旧值会让
+      // 诊断永久显示降级模式。noteDiag 只在值变化时置脏，不引起写盘抖动。
+      noteDiag({ llm: !!llm })
       var agent = payload && payload.agent
       if (!agent || !agent.session) {
         noteDiag({ lastDecision: 'no-agent' })
@@ -440,13 +461,22 @@ export function apply(ctx, config) {
       }
       var finalEffort = resolved.reasoningEffort
       var sameRoute = !!(prevConfig && prevConfig.provider === provider && prevConfig.model === model)
+      // 1.4.39 层次边界：payload 带 { turn, step }（agent-loop 的 prepareRequest
+      // 传入），step === 1 就是一轮的第一个请求 —— 也就是「下一次 user 输入」。
+      // keep-effort 只调表层（下一次输入要用的值），绝不改写正在 loop 的这一
+      // 轮：后续 step 会复用上一步已持久化的 header，这里既不记录也不继承，
+      // 运行中的会话就完全不受影响。payload 不带 step 的形态按轮首处理。
+      var atTurnStart = true
+      if (payload && typeof payload.step === 'number') atTurnStart = payload.step === 1
       var byModel = records.get(sessionId)
       var remembered = byModel ? byModel.get(provider + '/' + model) : undefined
       var current = resolved.reasoningEffort
       var modelDefault = undefined
       var supported = undefined
       var decision = 'none'
-      if (!sameRoute) {
+      if (!atTurnStart) {
+        decision = 'mid-turn-skip'
+      } else if (!sameRoute) {
         if (remembered !== undefined) {
           // 只有「当前值有、且与记忆不同」时才需要查新模型自己的默认值；
           // 其余分支用不到（decideCarry 在用到之前就已返回）。
@@ -471,10 +501,22 @@ export function apply(ctx, config) {
       }
       // 记录本次请求实际携带的值（继承决策之后）。瀑布 config 常常不带
       // effort（模型默认值在 prepareCall 里才物化）——用物化默认补齐，记忆
-      // 才能在「UI 切模型未选 effort」的常见路径上累积。
-      var recordedEffort = finalEffort
-      if (recordedEffort === undefined) recordedEffort = await effectiveDefaultOf(llm, provider, model)
-      record(sessionId, provider, model, recordedEffort)
+      // 才能在「UI 切模型未选 effort」的常见路径上累积。只在轮首记：轮中那
+      // 几步用的是同一选择，记它们只会把用户切换途中看到的默认值写成记忆。
+      if (atTurnStart) {
+        var recordedEffort = finalEffort
+        if (recordedEffort === undefined) recordedEffort = await effectiveDefaultOf(llm, provider, model)
+        // 1.4.39：默认值不得覆盖已有记忆。否则只要有一次请求「跑在了新模型
+        // 自己的默认值上」（继承被跳过、客户端没挂载、严格模式…），用户显式
+        // 选过的值就被洗成默认，之后再切回来「记忆消失」——这正是历史上
+        // 「有时候好用有时候不好用」的一种。
+        var usedModelDefault = false
+        if (recordedEffort !== undefined && remembered !== undefined && recordedEffort !== remembered) {
+          if (modelDefault === undefined) modelDefault = await effectiveDefaultOf(llm, provider, model)
+          usedModelDefault = modelDefault !== undefined && recordedEffort === modelDefault
+        }
+        if (!usedModelDefault) record(sessionId, provider, model, recordedEffort)
+      }
       noteDiag({
         lastRoute: provider + '/' + model,
         lastPrev: prevConfig ? prevConfig.provider + '/' + prevConfig.model : '',

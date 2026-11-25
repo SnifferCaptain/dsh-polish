@@ -418,14 +418,35 @@ function skillDiagSnapshot(root) {
   }
 }
 
+// 请求 host 重扫技能目录（picker 打开时调用）。host 只在收到新 nonce 时扫描，
+// 这里再做一层节流，避免快速开合时反复写 settings。
+var SKILL_RESCAN_GAP_MS = 3000
+var lastSkillRescanAt = 0
+function requestSkillRescan(settings) {
+  var now = Date.now()
+  if (!settings || typeof settings.update !== 'function') return
+  if (now - lastSkillRescanAt < SKILL_RESCAN_GAP_MS) return
+  lastSkillRescanAt = now
+  try {
+    var pending = settings.update(SKILL_MENTION_NS, { request: { nonce: now } }, void 0)
+    if (pending && typeof pending.catch === 'function') pending.catch(function () {})
+  } catch (error) {}
+}
+
 function makeSkillMentionPicker(child) {
   var noteDiag = makeSkillDiagSink(child)
+  var rescanSettings = child && child.remote ? child.remote.settings : null
   return function SkillMentionPicker(props) {
     var state = useStore(skillMentionStore)
     var catalog = state && Array.isArray(state.catalog) ? state.catalog : []
     var [view, setView] = React.useState(null)
     var [selectedIndex, setSelectedIndex] = React.useState(0)
     var prevViewRef = React.useRef(null)
+    var openedRef = React.useRef(false)
+    // 只记住上一次解析到的 query：方向键 keydown 改的是 selectedIndex，
+    // 紧接着的 keyup 会再跑一次解析。若此时无条件 setSelectedIndex(0)，
+    // 高亮就会在松键瞬间弹回第一项（用户实测的「上下箭头没用」）。
+    var lastQueryRef = React.useRef('')
     // 0.4.66: the session-scoped input slots receive the composer's public
     // action face as a prop (the same uiSession.provide injection that hands
     // inputActions to the conversation.input.right slot — see composer-
@@ -456,8 +477,17 @@ function makeSkillMentionPicker(child) {
         var root = skillComposerRoot(event && event.target)
         if (!root) return
         var next = parseSkillQuery(root)
+        // 选择器从关到开：请求 host 重扫一次技能目录（见 requestSkillRescan）。
+        if (next && !openedRef.current) requestSkillRescan(rescanSettings)
+        openedRef.current = !!next
+        var nextQuery = next ? String(next.query || '') : ''
+        // 查询词没变（方向键、Tab 之类只动高亮的按键）就不重排选择，
+        // 否则 keyup 会把 keydown 刚移到的位置重置掉。
+        if (nextQuery !== lastQueryRef.current) {
+          lastQueryRef.current = nextQuery
+          setSelectedIndex(0)
+        }
         setView(next)
-        setSelectedIndex(0)
       }
       function onKeyDown(event) {
         if (!event) return
@@ -474,6 +504,8 @@ function makeSkillMentionPicker(child) {
         if (!view) return
         if (event.key === 'Escape') {
           event.preventDefault()
+          lastQueryRef.current = ''
+          setSelectedIndex(0)
           setView(null)
           return
         }

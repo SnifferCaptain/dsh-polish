@@ -193,8 +193,9 @@
         // watches the durable modelSelection projection of the mounted session
         // and answers the two spec moments with the selector's own calls —
         // save on effort change (immediate config write), restore on model
-        // change (immediate selectModel with the remembered effort). Gated by
-        // the keep-effort row switch (whileServed).
+        // change (selectModel with the remembered effort, parked until the
+        // running turn ends so a loop is never retargeted from the inside).
+        // Gated by the keep-effort row switch (whileServed).
         child.effect(
           function () {
             return child.configForms.whileServed([NS_KEEP_EFFORT], function () {
@@ -391,6 +392,14 @@
       ctx.effect(
         function () {
           return ctx.slots.inject('plugins.row.config', function () {
+            return ctx.slots.register({ name: 'plugins.row.config', key: ROW_KEY_SKILL }, SkillPage)
+          })
+        },
+        'dsh-polish: skill loader config page',
+      )
+      ctx.effect(
+        function () {
+          return ctx.slots.inject('plugins.row.config', function () {
             return ctx.slots.register({ name: 'plugins.row.config', key: ROW_KEY_LRU }, LruPage)
           })
         },
@@ -443,7 +452,53 @@
         },
         'dsh-polish: visualize config page',
       )
+      ctx.effect(
+        function () {
+          return ctx.slots.inject('plugins.row.config', function () {
+            return ctx.slots.register({ name: 'plugins.row.config', key: ROW_KEY_COMPACT_MODEL }, makeCompactModelPage(ctx))
+          })
+        },
+        'dsh-polish: compact-model config page',
+      )
 
+      // ---- component: Better Model Config. The row page is the kill switch;
+      // the feature itself extends the OFFICIAL Models page in place: the
+      // provider-card slot carries ONLY a display:none route anchor, so the
+      // page before a model row is expanded is pixel-identical to the official
+      // one (1.4.15). Everything visible — protocol select, reference facts,
+      // fill defaults and the /v1 guard — is attached inside each model's
+      // expanded "模型选项" panel, the official model form and the only spot
+      // the page exposes for them. The attachment is idempotent (one strip per
+      // panel, diffed writes), so a rescan cannot re-trigger itself; the
+      // 1.4.11 rebuild loop was the reported jitter.
+      // Present only while the Host serves the component's own namespace (its row
+      // is enabled). 1.4.35: it used to watch [llm-pi-ai, own], and the official
+      // helper fires when ANY listed namespace is served, so disabling the row
+      // changed nothing. On unregister the poll, strips and stylesheet go too.
+      ctx.effect(
+        function () {
+          return ctx.slots.inject('plugins.row.config', function () {
+            return ctx.slots.register({ name: 'plugins.row.config', key: ROW_KEY_BMC }, BetterModelConfigPage)
+          })
+        },
+        'dsh-polish: better-model-config config page',
+      )
+      ctx.effect(
+        function () {
+          return ctx.configForms.whileServed([NS_BMC], function () {
+            var patcher = getBmcPatcher(ctx)
+            patcher.start()
+            var off = ctx.slots.inject('settings.models.provider-card', function () {
+              return ctx.slots.register({ name: 'settings.models.provider-card', key: NS_PI_AI }, makeBmcRouteCard(ctx, patcher))
+            })
+            return function () {
+              if (typeof off === 'function') off()
+              patcher.stop()
+            }
+          })
+        },
+        'dsh-polish: better-model-config official page extension',
+      )
 
       // ---- component J: custom system prompts. The row page is the live
       // kill switch (enabled); the real editor lives under Settings →
@@ -474,6 +529,8 @@
     exports.name = 'dsh-polish'
     exports.apply = apply
     exports.inject = inject
+    // Test seam: the Better Model Config patcher singleton (harness only).
+    exports.__bmcForTest = { getBmcPatcher: getBmcPatcher }
     return module.exports
   },
 })

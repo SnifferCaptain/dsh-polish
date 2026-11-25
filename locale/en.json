@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "DSH Polish",
-    "description": "16 independently switchable DSH enhancement components: thinking renderer/timer, arrow-up message recall, workspace LRU, reasoning-effort sliders, timer, notifications, mode switch, skill loading, local shell, prompt & tool prompts, visualization, effort keeper, session slimming, compact-model follow, PTC log repair, compaction hard-threshold enforcer."
-  }
-}

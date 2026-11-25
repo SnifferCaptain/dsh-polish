@@ -14,8 +14,37 @@
       return { served: !!(snapshot && snapshot.status !== 'unavailable'), value: value, snapshot: snapshot }
     }
 
+    /**
+     * The live snapshot of a row's config form.
+     *
+     * `form.state` is the shape the Plugins page passes in; `form.getSnapshot()`
+     * is the same information on the service side. A page that only read
+     * `form.state` rendered its "no settings" note forever whenever that field
+     * had not been published yet — the empty plugin page the user reported
+     * (1.4.22) — so both are accepted, and the form is subscribed to so a late
+     * snapshot repaints the page.
+     */
+    function useFormSnapshot(form) {
+      var tick = React.useState(0)
+      var bump = tick[1]
+      var snapshot = formSnapshotOf(form)
+      React.useEffect(
+        function () {
+          if (!form || typeof form.subscribe !== 'function') return undefined
+          var off = form.subscribe(function () {
+            bump(function (n) {
+              return n + 1
+            })
+          })
+          return typeof off === 'function' ? off : undefined
+        },
+        [form],
+      )
+      return snapshot
+    }
+
     function useDraft(form, coerce) {
-      var snapshot = form && form.state ? form.state : null
+      var snapshot = useFormSnapshot(form)
       var revision = snapshot ? snapshot.revision : 0
       var remote = snapshot && snapshot.status === 'ready' && snapshot.value ? snapshot.value : {}
       var draftState = React.useState(remote)
@@ -175,6 +204,58 @@
             },
             React.createElement('span', { className: 'dshp-knob' }),
           )
+        }
+        if (field.kind === 'list') {
+          var items = Array.isArray(draft[field.key]) ? draft[field.key] : []
+          var listRows = items.map(function (item, idx) {
+            return React.createElement(
+              'div',
+              { className: 'dshp-listrow', key: 'r' + idx },
+              React.createElement('input', {
+                type: 'text',
+                className: 'dshp-text-input',
+                value: item,
+                placeholder: field.placeholder || '',
+                'aria-label': field.label,
+                disabled: !writable,
+                onChange: function (event) {
+                  var next = items.slice()
+                  next[idx] = event.target.value
+                  setValue(field.key, next)
+                },
+              }),
+              React.createElement(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dshp-btn dshp-btn-ghost',
+                  disabled: !writable,
+                  onClick: function () {
+                    var next = items.slice()
+                    next.splice(idx, 1)
+                    setValue(field.key, next)
+                  },
+                },
+                t('skills.list.remove'),
+              ),
+            )
+          })
+          listRows.push(
+            React.createElement(
+              'button',
+              {
+                key: 'add',
+                type: 'button',
+                className: 'dshp-btn',
+                disabled: !writable,
+                onClick: function () {
+                  setValue(field.key, items.concat(['']))
+                },
+              },
+              t('skills.list.add'),
+            ),
+          )
+          return React.createElement('div', { className: 'dshp-list' }, listRows)
         }
         if (field.kind === 'swatch') {
           var current = String(draft[field.key] === undefined ? field.fallback : draft[field.key])
@@ -444,9 +525,23 @@
     }
 
     function summaryFrom(form, read) {
-      if (form === undefined || form === null || form.state === undefined) return t('form.loading')
-      if (form.state.status !== 'ready') return t('form.loading')
-      return read(form.state.value || {})
+      var snapshot = formSnapshotOf(form)
+      if (snapshot === null || snapshot.status !== 'ready') return t('form.loading')
+      return read(snapshot.value || {})
+    }
+
+    /** `form.state` when published, else the service snapshot, else null. */
+    function formSnapshotOf(form) {
+      if (form === undefined || form === null) return null
+      if (form.state) return form.state
+      if (typeof form.getSnapshot === 'function') {
+        try {
+          return form.getSnapshot()
+        } catch (error) {
+          return null
+        }
+      }
+      return null
     }
 
     function RendererPage(props) {
@@ -498,7 +593,7 @@
         ]
         if (depthStats.skip !== '' && SKIP_TEXT[depthStats.skip] !== undefined) depthItems.push({ label: t('depth.strip.skip'), value: SKIP_TEXT[depthStats.skip], tone: 'warn' })
       } else {
-        depthItems = [{ label: describePatcher(form && form.state ? form.state.value || {} : {}), tone: 'idle' }]
+        depthItems = [{ label: describePatcher((formSnapshotOf(form) || {}).value || {}), tone: 'idle' }]
       }
       return React.createElement(SettingsForm, { form: form, fields: DEPTH_FIELDS, coerce: coerceDepth, after: statusStrip(depthItems) })
     }
@@ -552,6 +647,159 @@
       return summaryLine([on, probe])
     }
 
+    // ---- 技能目录（skill-loader）：自定义 skill 文件夹列表。
+    var SKILL_FIELDS = [
+      { key: 'customRoots', kind: 'list', label: t('skills.roots.label'), hint: t('skills.roots.hint'), placeholder: t('skills.roots.placeholder'), fallback: [] },
+    ]
+
+    /** 列表去掉首尾空白、空项与重复项；其他字段原样返回。 */
+    function coerceSkill(field, value) {
+      if (field.kind !== 'list') return value
+      var list = Array.isArray(value) ? value : []
+      var seen = {}
+      var out = []
+      for (var i = 0; i < list.length; i++) {
+        var item = typeof list[i] === 'string' ? list[i].trim() : ''
+        if (item === '' || seen[item]) continue
+        seen[item] = true
+        out.push(item)
+      }
+      return out
+    }
+
+    function SkillPage(props) {
+      var form = props.form
+      if (props.view === 'summary') {
+        return React.createElement('span', null, summaryFrom(form, function (value) {
+          var n = Array.isArray(value.customRoots) ? value.customRoots.length : 0
+          return summaryLine([t('skills.summary', { n: n })])
+        }))
+      }
+      return React.createElement(SettingsForm, { form: form, fields: SKILL_FIELDS, coerce: coerceSkill })
+    }
+
+    var COMPACT_MODEL_FIELDS = [
+      {
+        key: 'followSelection',
+        kind: 'boolean',
+        group: t('compactModel.group.main'),
+        label: t('compactModel.follow.label'),
+        hint: t('compactModel.follow.hint'),
+        fallback: COMPACT_MODEL_DEFAULTS.followSelection,
+      },
+      {
+        key: 'chunkedCompaction',
+        kind: 'boolean',
+        label: t('compactModel.chunked.label'),
+        hint: t('compactModel.chunked.hint'),
+        fallback: COMPACT_MODEL_DEFAULTS.chunkedCompaction,
+      },
+      {
+        key: 'pressureGuardEnabled',
+        kind: 'boolean',
+        label: t('compactModel.pressureGuard.label'),
+        hint: t('compactModel.pressureGuard.hint'),
+        fallback: COMPACT_MODEL_DEFAULTS.pressureGuardEnabled,
+      },
+      {
+        key: 'autoRetry',
+        kind: 'boolean',
+        group: t('compactModel.group.retry'),
+        label: t('compactModel.autoRetry.label'),
+        hint: t('compactModel.autoRetry.hint'),
+        fallback: COMPACT_MODEL_DEFAULTS.autoRetry,
+      },
+      {
+        key: 'autoRetryAttempts',
+        kind: 'number',
+        label: t('compactModel.autoRetryAttempts.label'),
+        hint: t('compactModel.autoRetryAttempts.hint'),
+        fallback: COMPACT_MODEL_DEFAULTS.autoRetryAttempts,
+        min: 0,
+        max: 4,
+        step: 1,
+      },
+      {
+        key: 'autoRetryDelayMs',
+        kind: 'number',
+        label: t('compactModel.autoRetryDelayMs.label'),
+        hint: t('compactModel.autoRetryDelayMs.hint'),
+        fallback: COMPACT_MODEL_DEFAULTS.autoRetryDelayMs,
+        min: 0,
+        max: 20000,
+        step: 100,
+      },
+    ]
+
+    // 布尔缺值按各自默认收拢：跟随默认开；分片、重试、压力保护（1.4.26 起、1.4.36 起分片与重试）默认关
+    // （它压不动时会拒绝回合，必须显式打开）。
+    function coerceCompactModel(field, value) {
+      // 缺省（undefined / null）取字段自己的默认值；有值则严格按 true 判断，不把 null 当成开。
+      if (field.kind === 'boolean') return value === undefined || value === null ? field.fallback === true : value === true
+      if (field.kind === 'number') {
+        var n = Number(value)
+        if (!isFinite(n)) return field.fallback
+        if (field.min !== undefined && n < field.min) return field.min
+        if (field.max !== undefined && n > field.max) return field.max
+        return Math.round(n)
+      }
+      return value
+    }
+
+    function describeCompactModel(value) {
+      return summaryLine([
+        t('compactModel.summary.follow', { on: value.followSelection !== false ? t('common.on') : t('common.off') }),
+        t('compactModel.summary.chunked', { on: value.chunkedCompaction === true ? t('common.on') : t('common.off') }),
+        value.pressureGuardEnabled === true ? t('compactModel.summary.guardOn') : t('compactModel.summary.guardOff'),
+        t('compactModel.summary.retry', { n: value.autoRetry !== true ? 0 : value.autoRetryAttempts === undefined ? 2 : value.autoRetryAttempts }),
+      ])
+    }
+
+    /**
+     * The compact-model row page.
+     *
+     * `props.form` is the page's live form when the shell hands one over; when
+     * it does not (the row page rendered empty with no fields at all), the
+     * namespace is read from the same `configForms` service the rest of this
+     * bundle uses. A missing form now names itself instead of rendering blank.
+     */
+    function makeCompactModelPage(ctx) {
+      return function CompactModelPage(props) {
+        var form = props.form
+        if ((form === undefined || form === null) && ctx && ctx.configForms) {
+          try {
+            form = ctx.configForms.get(NS_COMPACT_MODEL)
+          } catch (error) {
+            form = null
+          }
+        }
+        if (props.view === 'summary') {
+          return React.createElement('span', null, summaryFrom(form, describeCompactModel))
+        }
+        if (!form) {
+          // 1.4.26：连表单都没拿到时也要看得见两个功能各自的开关状态，
+          // 而不是一句「未提供设置」的空白页（用户报过「看不到这两个开关」）。
+          var live = ctx ? readNamespace(ctx, NS_COMPACT_MODEL, COMPACT_MODEL_DEFAULTS) : { value: COMPACT_MODEL_DEFAULTS }
+          var value = live.value
+          var onOff = function (v, onWhenUndefined) {
+            return (onWhenUndefined ? v !== false : v === true) ? t('common.on') : t('common.off')
+          }
+          return React.createElement(
+            'div',
+            null,
+            React.createElement('p', { className: 'dshp-note' }, t('form.noSettings')),
+            statusStrip([
+              { label: t('compactModel.follow.label'), value: onOff(value.followSelection, true) },
+              { label: t('compactModel.chunked.label'), value: onOff(value.chunkedCompaction, false) },
+              { label: t('compactModel.pressureGuard.label'), value: onOff(value.pressureGuardEnabled, false) },
+              { label: t('compactModel.autoRetry.label'), value: onOff(value.autoRetry, false) },
+            ]),
+          )
+        }
+        return React.createElement(SettingsForm, { form: form, fields: COMPACT_MODEL_FIELDS, coerce: coerceCompactModel })
+      }
+    }
+
     var LRU_FIELDS = [
       {
         key: 'enabled',
@@ -579,7 +827,7 @@
     function describeLru(value) {
       var stats = lruStatsStore.get()
       var on = value.enabled !== false ? t('common.on') : t('common.off')
-      var subOn = value.subagent === true ? t('common.on') : t('common.off')
+      var subOn = value.subagent !== false ? t('common.on') : t('common.off')
       var probe
       if (stats.error) {
         probe = stats.error
@@ -644,7 +892,8 @@
           return describeShellLocal(value)
         }))
       }
-      var shellOn = !(form && form.state && form.state.value) || form.state.value.enabled !== false
+      var shellSnap = formSnapshotOf(form)
+      var shellOn = !(shellSnap && shellSnap.value) || shellSnap.value.enabled !== false
       return React.createElement(SettingsForm, {
         form: form,
         fields: SHELL_LOCAL_FIELDS,

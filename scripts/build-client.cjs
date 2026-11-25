@@ -26,6 +26,7 @@ const sources = [
   'src/client/prompts/prompts.js',
   'src/client/skill/skill-mention.js',
   'src/client/session-slim/session-slim.js',
+  'src/client/models/better-model-config.js',
   'src/client/runtime/apply.js',
 ]
 const outputPath = path.join(root, 'lib', 'client.js')

@@ -173,6 +173,15 @@ export function apply(ctx, config) {
         })
         timers.clear()
         sessionCounts.clear()
+        // 按 agent 注册的 timer_set / timer_cancel 也要注销，否则卸载后仍挂在已存在的 agent 上。
+        registeredByAgent.forEach(function (ds) {
+          ds.forEach(function (d) {
+            try {
+              if (typeof d === 'function') d()
+            } catch (error) {}
+          })
+        })
+        registeredByAgent.clear()
         // 行关/收起：清空「活动会话」通道（best-effort）。client 端在行未服务
         // 时读不到该字段，所以即使这里没写成，图标也不会残留。
         try {
@@ -221,9 +230,16 @@ export function apply(ctx, config) {
       var sessionId = agent.session.id
       var minutes = Number(args.minutes)
       if (!isFinite(minutes) || minutes <= 0) return { ok: false, error: 'minutes 必须是 >0 的数字' }
-      var repeats = args.repeats === undefined ? 1 : Math.max(1, Math.floor(Number(args.repeats)))
+      var repeats = 1
+      if (args.repeats !== undefined) {
+        repeats = Number(args.repeats)
+        if (!isFinite(repeats) || repeats < 1) return { ok: false, error: 'repeats 必须是 >=1 的整数' }
+        repeats = Math.floor(repeats)
+      }
       var text = typeof args.message === 'string' && args.message.trim() !== '' ? args.message : '计时 ' + minutes + ' 分钟结束'
       var id = uid('timer-')
+      // setTimeout 的上限是 2^31-1 毫秒；超过会立即触发。约 35791 分钟。
+      if (minutes * 60000 > 2147483647) return { ok: false, error: 'minutes 超过上限（约 35790）' }
       var delayMs = Math.max(1, Math.round(minutes * 60000))
       var fired = 0
       var dispose = ctx.interval(
